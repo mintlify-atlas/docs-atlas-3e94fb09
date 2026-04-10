@@ -1,0 +1,191 @@
+---
+title: "Troubleshoot common Claw Code setup and runtime issues"
+description: "Fix the most common Claw Code problems: wrong install, 401 auth failures, credential misrouting, broken pipes, plugin failures, and phantom completions."
+---
+
+This page collects the most common issues reported in the UltraWorkers community and their fixes. Run `claw doctor` first — it is the built-in preflight diagnostic and catches the majority of auth, network, and configuration problems before you dig deeper.
+
+```bash
+cd rust
+./target/debug/claw doctor
+```
+
+<AccordionGroup>
+  <Accordion title="cargo install claw-code installs the wrong thing">
+    The `claw-code` crate on crates.io is a **deprecated stub**. Running it only prints:
+
+    ```
+    claw-code has been renamed to agent-code
+    ```
+
+    It installs `claw-code-deprecated.exe` — not `claw`. Do not use `cargo install claw-code`.
+
+    **Fix:** build from source (this repo):
+
+    ```bash
+    git clone https://github.com/ultraworkers/claw-code
+    cd claw-code/rust
+    cargo build --workspace
+    ./target/debug/claw doctor
+    ```
+
+    If you want the upstream binary instead:
+
+    ```bash
+    cargo install agent-code   # installs 'agent' (Unix) / 'agent.exe' (Windows) — NOT 'agent-code'
+    ```
+
+    `ultraworkers/claw-code` is **build-from-source only**.
+  </Accordion>
+
+  <Accordion title="401 Invalid bearer token">
+    This error means an `sk-ant-*` API key was placed in `ANTHROPIC_AUTH_TOKEN` instead of `ANTHROPIC_API_KEY`. Anthropic's API expects `sk-ant-*` keys in the `x-api-key` header; the `ANTHROPIC_AUTH_TOKEN` slot sends its value as `Authorization: Bearer ...`, which Anthropic rejects at the edge before the request reaches the completions endpoint.
+
+    | Credential shape | Correct env var | HTTP header sent |
+    |---|---|---|
+    | `sk-ant-*` API key | `ANTHROPIC_API_KEY` | `x-api-key: sk-ant-...` |
+    | OAuth access token (opaque) | `ANTHROPIC_AUTH_TOKEN` | `Authorization: Bearer ...` |
+
+    **Fix:** move the key to the correct variable:
+
+    ```bash
+    unset ANTHROPIC_AUTH_TOKEN
+    export ANTHROPIC_API_KEY="sk-ant-..."
+    ```
+
+    Recent `claw` builds detect the exact shape (401 + `sk-ant-*` in the Bearer slot) and append a hint to the error message pointing at this fix.
+  </Accordion>
+
+  <Accordion title="Missing Anthropic credentials with OPENAI_API_KEY set">
+    If `claw` reports missing Anthropic credentials but you have `OPENAI_API_KEY` already exported, the model name is missing its provider routing prefix. Without the prefix, `claw` falls through to Anthropic because `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is found first in the env-var sniffer order.
+
+    **Fix:** prefix the model name with `openai/` so the prefix router wins over env-var presence:
+
+    ```bash
+    export OPENAI_API_KEY="sk-or-v1-..."
+    export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
+
+    cd rust
+    ./target/debug/claw --model openai/gpt-4.1-mini prompt "hello"
+    ```
+
+    Any model name starting with `openai/` or `gpt-` is routed to the OpenAI-compatible backend regardless of which other credentials are set in the environment. The error message now includes a hint naming the detected env var.
+  </Accordion>
+
+  <Accordion title="claw doctor fails / preflight errors">
+    `claw doctor` runs a built-in preflight report. When it fails, work through these checks in order:
+
+    <Steps>
+      <Step title="Check your API key">
+        Ensure the correct env var is set for your credential shape (see the 401 entry above). For direct Anthropic access:
+
+        ```bash
+        export ANTHROPIC_API_KEY="sk-ant-..."
+        ```
+      </Step>
+      <Step title="Check network connectivity">
+        Verify you can reach the Anthropic API endpoint from your machine. If you are behind a corporate proxy, set `HTTPS_PROXY` before running `claw` — see the [proxy guide](/deployment/proxy).
+      </Step>
+      <Step title="Re-run doctor and read the output">
+        ```bash
+        cd rust
+        ./target/debug/claw doctor
+        ```
+
+        The report lists each preflight check with a `pass` / `fail` status and a summary. Address each failing check in sequence.
+      </Step>
+      <Step title="Resume a previous session">
+        If you have a saved session, you can re-run `doctor` without starting a new one:
+
+        ```bash
+        ./target/debug/claw --resume latest /doctor
+        ```
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="Windows: binary not found after cargo build">
+    On Windows the binary is `claw.exe`, not `claw`. The Unix-style path `./target/debug/claw` does not work in PowerShell.
+
+    **Fix:** use the `.exe` extension and backslash path:
+
+    ```powershell
+    $env:ANTHROPIC_API_KEY = "sk-ant-..."
+    .\target\debug\claw.exe doctor
+    .\target\debug\claw.exe prompt "say hello"
+    ```
+
+    Alternatively, use `cargo run` to skip the path lookup entirely:
+
+    ```powershell
+    cargo run -- prompt "say hello"
+    ```
+
+    <Note>
+      Git Bash and WSL are optional alternatives. In Git Bash the `MINGW64` prompt is expected and normal — not a broken install.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Broken pipe (os error 32) from hooks">
+    You may see an error like:
+
+    ```
+    PostToolUse hook .../hooks/post.sh failed to start for "Read": Broken pipe (os error 32)
+    ```
+
+    This is a known stdin race with fast-exiting hook scripts. The root cause: `claw` unconditionally writes the JSON hook payload (~200 bytes) to the child process's stdin pipe. Hook scripts that are trivial (`#!/bin/sh` + a single `printf`) exit in microseconds — before the parent finishes writing. On Linux, the kernel raises `EPIPE` immediately when the child closes its stdin end of the pipe; on macOS the small payload usually buffers before the child exits, so the race only reliably surfaces on Linux CI runners.
+
+    This was fixed at commit `172a2ad` (2026-04-08): `output_with_stdin` now ignores `BrokenPipe` errors on the stdin write path, treating a fast-exiting hook as a successful no-error run rather than a hook failure. If you are still seeing this error, ensure you are on a recent `main` build:
+
+    ```bash
+    git pull origin main
+    cd rust && cargo build --workspace
+    ```
+  </Accordion>
+
+  <Accordion title="Plugin list shows empty or plugin does nothing">
+    When an installed plugin has a broken manifest — missing hook scripts, JSON parse errors, or a bad `.claude-plugin` file — the plugin silently fails to load. The `/plugin list` output shows nothing for that plugin, and no error is printed.
+
+    Common causes:
+
+    - Hook script paths declared in the manifest do not exist on disk (e.g. the `hooks/` subdirectory was deleted after install).
+    - The `.claude-plugin` manifest contains invalid JSON.
+    - The hook scripts exist but lack the execute bit (on Unix).
+
+    **Fix steps:**
+
+    1. Check the plugin directory for missing files:
+       ```bash
+       ls ~/.claw/plugins/installed/<plugin-name>/hooks/
+       ```
+    2. Ensure hook scripts are executable:
+       ```bash
+       chmod +x ~/.claw/plugins/installed/<plugin-name>/hooks/*.sh
+       ```
+    3. Validate the manifest JSON:
+       ```bash
+       cat ~/.claw/plugins/installed/<plugin-name>/.claude-plugin | python3 -m json.tool
+       ```
+    4. Remove and reinstall the plugin if the manifest is unrecoverable.
+
+    Recent `claw` builds surface broken plugin manifests as explicit warnings at startup rather than silently skipping them.
+  </Accordion>
+
+  <Accordion title="Session phantom completions / wrong CWD">
+    **Symptom:** a lane reports a clean run — file edits, builds, tests — but the originating worktree shows no diff. A sibling worktree gains unexplained edits. The orchestrator marks the lane green even though nothing landed.
+
+    **Root cause:** the session store (`~/.local/share/opencode`) is global to the host. Sessions are keyed only by ID and timestamp, not by the workspace they were created in. When parallel `claw` instances run against different worktrees, whichever instance picks up a given session ID drives it from whatever CWD that process happens to be running in. Writes land in the wrong tree; the originating worktree shows an empty diff; the success signal fires anyway.
+
+    **Current status:** a `workspace_root` field has been added to `Session` in `rust/crates/runtime/src/session.rs`. Sessions now capture the canonical workspace root at creation time. Full CWD validation on every tool call with side effects and namespaced on-disk session paths are still in progress.
+
+    **Workaround until the fix is fully landed:**
+
+    - Run only one `claw` instance per worktree.
+    - Verify the CWD before starting a session: `claw sandbox` prints the workspace root and confirms container state.
+    - If you see phantom completions, check `.claw/sessions/` in the affected worktrees and compare session IDs.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+Still stuck? Join the [UltraWorkers Discord](https://discord.gg/5TUQKqFWd) — the `#claw-code` channel is where most issues get triaged.

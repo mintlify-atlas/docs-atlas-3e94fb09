@@ -1,0 +1,133 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Claw Code",
+  "projectDescription": "A high-performance Rust CLI agent harness that connects to Anthropic, OpenAI-compatible, and xAI providers for autonomous coding workflows, supporting interactive REPL, one-shot prompts, sessions, plugins, MCP servers, and multi-agent orchestration.",
+  "theme": "aspen",
+  "primaryColor": "#5c64f4",
+  "lightColor": "#acb4fc",
+  "darkColor": "#ffffff",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/settings",
+              "configuration/authentication",
+              "configuration/providers"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "commands/cli-flags",
+              "commands/slash-commands",
+              "commands/session-management"
+            ]
+          },
+          {
+            "group": "Extending Claw",
+            "pages": [
+              "extending/plugins",
+              "extending/mcp-servers",
+              "extending/skills",
+              "extending/hooks"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/container",
+              "deployment/proxy",
+              "deployment/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Tool Reference",
+            "pages": [
+              "reference/tools-overview",
+              "reference/file-tools",
+              "reference/bash-tool",
+              "reference/web-tools",
+              "reference/agent-tools"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "reference/crate-map",
+              "reference/permission-model",
+              "reference/parity-status"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Interactive REPL and one-shot prompt modes with streaming output",
+    "Multi-provider support: Anthropic, OpenAI-compatible, xAI, DashScope/Qwen, Ollama, OpenRouter",
+    "OAuth and API key authentication with per-provider routing",
+    "Session persistence and resume across workspaces",
+    "Built-in tool system: bash, file read/write/edit, glob, grep, web search/fetch",
+    "Plugin system with install/enable/disable lifecycle and hook integration",
+    "MCP (Model Context Protocol) server lifecycle management",
+    "Permission modes: read-only, workspace-write, danger-full-access",
+    "Sub-agent and multi-agent orchestration surfaces",
+    "Machine-readable JSON output across all CLI commands",
+    "Container-first build and test workflow (Docker/Podman)",
+    "Deterministic parity harness with mock Anthropic service"
+  ],
+  "publicApiSurface": [
+    "claw prompt <text>",
+    "claw login / claw logout",
+    "claw doctor",
+    "claw status",
+    "claw sandbox",
+    "claw agents",
+    "claw mcp",
+    "claw skills",
+    "claw system-prompt",
+    "claw init",
+    "claw --model <alias|id>",
+    "claw --permission-mode <read-only|workspace-write|danger-full-access>",
+    "claw --output-format json",
+    "claw --resume <session-id|latest>",
+    "claw --allowedTools <tool-list>",
+    "/doctor",
+    "/status",
+    "/cost",
+    "/config",
+    "/session",
+    "/model",
+    "/permissions",
+    "/plugin",
+    "/skills",
+    "/agents",
+    "/mcp",
+    "/subagent",
+    "/hooks",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "OPENAI_API_KEY + OPENAI_BASE_URL",
+    "XAI_API_KEY",
+    "DASHSCOPE_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "~/.claw/settings.json"
+  ]
+}

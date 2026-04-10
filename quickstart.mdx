@@ -1,80 +1,147 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quickstart: build and run Claw Code in five minutes"
+description: "Clone the repo, build the claw binary with cargo, verify your setup with claw doctor, and run your first prompt. Covers Unix and Windows PowerShell."
 ---
 
-## Get started in three steps
+Claw Code is a build-from-source CLI. This guide walks you through cloning the repository, building the `claw` binary, and running your first prompt. The whole flow takes under five minutes on a machine with Rust already installed.
 
-Get your documentation site running locally and make your first customization.
+<Warning>
+  **`cargo install claw-code` installs the wrong thing.** The `claw-code` crate on crates.io is a deprecated stub that places `claw-code-deprecated.exe` — not `claw`. Running it only prints `"claw-code has been renamed to agent-code"`. Do not use `cargo install claw-code`. Build from source using the steps below, or install the upstream binary with `cargo install agent-code`.
+</Warning>
 
-### Step 1: Set up your local environment
+## Build and run
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Tabs>
+  <Tab title="Linux / macOS">
+    <Steps>
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/ultraworkers/claw-code
+        cd claw-code/rust
+        ```
+      </Step>
+      <Step title="Build the workspace">
+        ```bash
+        cargo build --workspace
+        ```
 
-### Step 2: Deploy your changes
+        The `claw` binary is placed at `rust/target/debug/claw` after a successful debug build.
+      </Step>
+      <Step title="Set your API key">
+        ```bash
+        export ANTHROPIC_API_KEY="sk-ant-..."
+        ```
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+        <Note>
+          Claw requires an **API key** — a Claude subscription login is not a supported auth path. Get an API key at [console.anthropic.com](https://console.anthropic.com). If you prefer a different provider, see the [authentication guide](/configuration/authentication).
+        </Note>
+      </Step>
+      <Step title="Run the doctor health check">
+        ```bash
+        ./target/debug/claw doctor
+        ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+        `claw doctor` is the built-in preflight diagnostic. Run it every time after a fresh build or credential change to confirm that your API key is wired correctly, the binary resolves, and the runtime can reach the provider. Fix any issues it reports before running prompts.
+      </Step>
+      <Step title="Run your first prompt">
+        ```bash
+        ./target/debug/claw prompt "say hello"
+        ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+        You should see the agent respond. From here you can open the interactive REPL by running `./target/debug/claw` without arguments.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Windows (PowerShell)">
+    <Steps>
+      <Step title="Install Rust">
+        Download and run the installer from [rustup.rs](https://rustup.rs). Close and reopen your terminal when it finishes, then verify:
 
-### Step 3: Go live
+        ```powershell
+        cargo --version
+        ```
+      </Step>
+      <Step title="Clone the repository">
+        ```powershell
+        git clone https://github.com/ultraworkers/claw-code
+        cd claw-code/rust
+        ```
+      </Step>
+      <Step title="Build the workspace">
+        ```powershell
+        cargo build --workspace
+        ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+        The binary is placed at `rust\target\debug\claw.exe` after a successful build.
+      </Step>
+      <Step title="Set your API key">
+        ```powershell
+        $env:ANTHROPIC_API_KEY = "sk-ant-..."
+        ```
+
+        <Note>
+          Claw requires an **API key** — a Claude subscription login is not a supported auth path. Get an API key at [console.anthropic.com](https://console.anthropic.com).
+        </Note>
+      </Step>
+      <Step title="Run the doctor health check">
+        ```powershell
+        .\target\debug\claw.exe doctor
+        ```
+
+        `claw doctor` is the built-in preflight diagnostic. Run it after every fresh build or credential change to confirm the binary and provider connection are healthy.
+      </Step>
+      <Step title="Run your first prompt">
+        ```powershell
+        .\target\debug\claw.exe prompt "say hello"
+        ```
+
+        Alternatively, use `cargo run` to skip the path lookup:
+
+        ```powershell
+        cargo run -- prompt "say hello"
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## JSON output for scripting
+
+Pass `--output-format json` to get machine-readable output from any prompt. This is useful for automation, CI pipelines, and agent orchestration:
+
+```bash
+./target/debug/claw --output-format json prompt "status"
+```
+
+Example output:
+
+```json
+{
+  "type": "result",
+  "subtype": "success",
+  "cost_usd": 0.0012,
+  "is_error": false,
+  "duration_ms": 843,
+  "duration_api_ms": 801,
+  "num_turns": 1,
+  "result": "All systems operational.",
+  "session_id": "session-20260410-001"
+}
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Installation details" icon="download" href="/installation">
+    Full prerequisites, platform notes, and test suite verification.
+  </Card>
+  <Card title="Authentication" icon="key" href="/configuration/authentication">
+    API keys, OAuth, and per-provider credential routing.
+  </Card>
+  <Card title="Providers and models" icon="microchip" href="/configuration/providers">
+    Connect to OpenAI, OpenRouter, Ollama, xAI, and DashScope.
+  </Card>
+  <Card title="CLI flags and commands" icon="terminal" href="/commands/cli-flags">
+    Every flag, subcommand, and permission mode `claw` accepts.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

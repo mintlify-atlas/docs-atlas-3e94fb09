@@ -1,0 +1,102 @@
+---
+title: "Configure Claw Code with layered settings files"
+description: "Claw Code merges up to five settings files at startup. Later entries override earlier ones, so project-local files always win over user-level defaults."
+---
+
+Claw Code loads its runtime configuration from a layered hierarchy of JSON files. You can set global defaults in your home directory and override them per-repository — with an optional machine-local file that is safe to add to `.gitignore`.
+
+## Config file resolution order
+
+Files are merged in the order below. Each file overrides the one before it, so project-local settings always take precedence over user-level defaults.
+
+<Steps>
+  <Step title="~/.claw.json">
+    User-level config at the root of your home directory. Good for personal defaults that apply everywhere.
+  </Step>
+  <Step title="~/.config/claw/settings.json">
+    XDG-compliant user config. Equivalent to `~/.claw.json` — use whichever fits your dotfile layout.
+  </Step>
+  <Step title="&lt;repo&gt;/.claw.json">
+    Repository-level config at the repo root. Commit this for shared project defaults.
+  </Step>
+  <Step title="&lt;repo&gt;/.claw/settings.json">
+    Repository-level config in the `.claw/` directory. Commit this for shared project defaults.
+  </Step>
+  <Step title="&lt;repo&gt;/.claw/settings.local.json">
+    Machine-local overrides. Add this path to `.gitignore` — it is never committed to the repository.
+  </Step>
+</Steps>
+
+<Tip>
+  Use `<repo>/.claw/settings.local.json` for secrets, local model endpoints, or personal preferences that should not be shared with teammates.
+</Tip>
+
+## Example settings file
+
+```json
+{
+  "aliases": {
+    "fast": "claude-haiku-4-5-20251213",
+    "smart": "claude-opus-4-6",
+    "cheap": "grok-3-mini"
+  },
+  "model": "sonnet",
+  "trusted_roots": [
+    "/home/alice/projects",
+    "/opt/shared-workspaces"
+  ]
+}
+```
+
+## User-defined aliases
+
+The `aliases` field maps short names to full model identifiers. Aliases you define in a settings file layer on top of the built-in alias table, and project settings override user settings.
+
+```json
+{
+  "aliases": {
+    "fast": "claude-haiku-4-5-20251213",
+    "smart": "claude-opus-4-6",
+    "cheap": "grok-3-mini"
+  }
+}
+```
+
+You can even chain aliases through the built-in table:
+
+```json
+{
+  "aliases": {
+    "fast": "haiku"
+  }
+}
+```
+
+Here `"fast"` resolves to `"haiku"`, which is then resolved through the built-in table to `claude-haiku-4-5-20251213`.
+
+Use the alias at the command line with `--model`:
+
+```bash
+claw --model fast prompt "review this diff"
+```
+
+## trusted_roots
+
+The `trusted_roots` field is an array of absolute directory paths. Claw Code treats files under these paths as trusted when evaluating permissions and sandbox policies.
+
+```json
+{
+  "trusted_roots": [
+    "/home/alice/projects",
+    "/opt/shared-workspaces"
+  ]
+}
+```
+
+<Note>
+  `trusted_roots` entries are additive across the config hierarchy — each file can extend the list.
+</Note>
+
+## Inspecting the resolved config
+
+From inside the REPL, run `/config` to see the fully merged configuration that Claw Code is using for the current session.

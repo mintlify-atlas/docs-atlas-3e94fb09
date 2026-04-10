@@ -1,0 +1,102 @@
+---
+title: "Load skills to shape Claw Code agent behavior"
+description: "Skills are domain-specific instruction sets injected into the agent context. Discover, install, and author skills with /skills or the claw skills subcommand."
+---
+
+Skills are structured instruction sets that Claw Code loads into the agent's context before a session begins. Each skill is a directory containing a `SKILL.md` file with guidelines, workflows, and optional bundled resources. When a skill is active, its instructions become part of the system prompt, shaping how the agent approaches tasks in a particular domain.
+
+## Listing installed skills
+
+Inside the REPL, run `/skills list` to see every skill Claw Code has discovered:
+
+```bash
+/skills list
+```
+
+The output shows each skill's name, source directory, and a short description taken from the first heading in `SKILL.md`.
+
+You can also use the full command form:
+
+```bash
+/skills help
+```
+
+## Installing a skill
+
+```bash
+/skills install <path>
+```
+
+Point `/skills install` at a local directory that contains a `SKILL.md` file. Claw Code copies the directory into the active skill root and makes it available immediately.
+
+## Inspecting skills from the CLI
+
+The `skills` subcommand runs outside the REPL and lists all discovered skills. Use `--output-format json` for machine-readable output:
+
+```bash
+claw skills
+claw --output-format json skills
+```
+
+## Skill discovery paths
+
+Claw Code searches the following directories for skills, in order:
+
+<AccordionGroup>
+  <Accordion title="Project-level skills (.claw/skills)">
+    Skills placed in `.claw/skills/` within the current workspace are project-specific. They take precedence over user-level skills with the same name.
+  </Accordion>
+  <Accordion title="User-level skills (~/.claw/skills)">
+    Skills in `~/.claw/skills/` are available across all projects for the current user.
+  </Accordion>
+  <Accordion title="Legacy paths (.codex/skills)">
+    Claw Code still scans `.codex/skills/` alongside `.claw/skills/` for backward compatibility. Both paths are equivalent at runtime.
+  </Accordion>
+  <Accordion title="CODEX_HOME override">
+    Set the `CODEX_HOME` environment variable to point to a custom root directory. Claw Code will look for skills under `$CODEX_HOME/skills/` in addition to the standard paths.
+
+    ```bash
+    export CODEX_HOME="/opt/my-skills-root"
+    claw skills
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Skill directory layout
+
+A minimal skill looks like this:
+
+```
+my-skill/
+├── SKILL.md          # Required — instructions loaded into context
+└── reference/        # Optional — supporting files referenced from SKILL.md
+    └── examples.md
+```
+
+The `SKILL.md` file can reference files bundled alongside it. Paths in the skill file are resolved relative to the skill directory, so you can ship templates, schemas, or reference data that the skill instructions point to.
+
+## Authoring a skill
+
+```markdown
+# My skill title
+
+Brief description of what this skill covers.
+
+## When to use this skill
+
+Explain the trigger conditions or domains where this skill applies.
+
+## Instructions
+
+Step-by-step guidance for the agent to follow when this skill is active.
+
+## Reference
+
+Link to or embed any supporting reference material.
+```
+
+Save the file as `SKILL.md` in a new directory and run `/skills install <path>` to make it available.
+
+<Note>
+The canonical skill discovery path is `.claw/skills`. The legacy path `.codex/skills` is also scanned for compatibility with earlier tooling. New skills should be placed in `.claw/skills` or `~/.claw/skills`. The two paths are functionally equivalent and skills from both are merged into the same inventory.
+</Note>

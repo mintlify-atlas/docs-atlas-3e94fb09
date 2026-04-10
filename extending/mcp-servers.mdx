@@ -1,0 +1,134 @@
+---
+title: "Connect MCP servers to extend Claw Code tools"
+description: "MCP servers expose additional tools to the agent at runtime. Configure them in settings.json and inspect their state with /mcp or the mcp subcommand."
+---
+
+The Model Context Protocol (MCP) is a standard interface for connecting external tool servers to an AI agent. When an MCP server is configured, Claw Code spawns or connects to it at startup, performs a handshake, discovers the tools it exposes, and makes those tools available to the model alongside built-in tools.
+
+## Configuring MCP servers
+
+MCP servers are declared in the `mcpServers` object in any `settings.json` file. Each key is the server name; the value describes how to connect.
+
+<Tabs>
+  <Tab title="stdio">
+    Launch a local process and communicate over stdin/stdout:
+
+    ```json
+    {
+      "mcpServers": {
+        "my-server": {
+          "type": "stdio",
+          "command": "uvx",
+          "args": ["mcp-server-name"],
+          "env": {
+            "API_TOKEN": "secret"
+          },
+          "toolCallTimeoutMs": 30000
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="HTTP / SSE">
+    Connect to a remote HTTP or SSE endpoint:
+
+    ```json
+    {
+      "mcpServers": {
+        "remote-server": {
+          "type": "http",
+          "url": "https://mcp.example.com/mcp",
+          "headers": {
+            "Authorization": "Bearer token"
+          },
+          "headersHelper": "./scripts/get-token.sh"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="WebSocket">
+    Connect over a WebSocket:
+
+    ```json
+    {
+      "mcpServers": {
+        "ws-server": {
+          "type": "ws",
+          "url": "wss://mcp.example.com/mcp",
+          "headers": {
+            "X-Session": "my-session"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+The `type` field is optional for `stdio` servers (it is inferred when `command` is present) and for `http` servers (inferred when `url` is present without a WebSocket scheme).
+
+Settings files are merged in precedence order. A server defined in `.claw/settings.local.json` overrides the same-named server from `~/.claw/settings.json`.
+
+## Inspecting MCP servers in the REPL
+
+Use the `/mcp` slash command to inspect configured servers during a session:
+
+```bash
+# List all configured servers and their status
+/mcp list
+
+# Show details for a specific server
+/mcp show <server-name>
+```
+
+## Inspecting MCP servers from the CLI
+
+The `mcp` subcommand runs outside the REPL and prints server information. Use `--output-format json` for structured output:
+
+```bash
+claw mcp
+claw --output-format json mcp
+```
+
+## Server lifecycle
+
+Each MCP server passes through the following phases when Claw Code starts:
+
+<Steps>
+  <Step title="Config load">
+    `settings.json` files are merged and the `mcpServers` map is built.
+  </Step>
+  <Step title="Server registration">
+    Each configured server is registered with the `McpManager` before any connections are attempted.
+  </Step>
+  <Step title="Spawn / connect">
+    For `stdio` servers, a child process is spawned. For remote servers, a connection to the URL is established.
+  </Step>
+  <Step title="Initialize handshake">
+    The MCP protocol handshake (`initialize` / `initialized`) is completed to negotiate capabilities.
+  </Step>
+  <Step title="Tool discovery">
+    The server's tool list is fetched and each tool is registered under the namespaced prefix `mcp__<server-name>__<tool-name>`.
+  </Step>
+  <Step title="Invocation">
+    During a session the model calls tools by their namespaced name. The runtime dispatches each call to the appropriate server.
+  </Step>
+</Steps>
+
+## Degraded startup
+
+If one MCP server fails to start, Claw Code continues loading all other configured servers. Failed servers are tracked separately and do not prevent the session from starting. You can still use tools from all servers that started successfully.
+
+The failure type is classified into one of:
+
+| Type | Meaning |
+|---|---|
+| `config` | The server entry in `settings.json` is malformed or missing required fields |
+| `startup` | The process could not be spawned or the connection could not be established |
+| `handshake` | The MCP initialize handshake did not complete |
+| `partial` | The server started but tool discovery returned an error |
+
+<Note>
+The `McpManager` tracks each server's lifecycle phase and failure details separately, so structured failure information is always available via `/mcp show <name>` or `--output-format json` output even when a server is degraded. This makes it straightforward to diagnose configuration problems without restarting the session.
+</Note>

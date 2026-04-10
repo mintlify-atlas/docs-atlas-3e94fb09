@@ -1,0 +1,139 @@
+---
+title: 'Persist, resume, and inspect Claw Code sessions'
+description: 'How claw persists REPL sessions under .claw/sessions/, where they are stored, and how to resume, inspect, export, compact, and track costs.'
+---
+
+Every REPL turn is automatically persisted so you can pick up exactly where you left off. Sessions are stored as `.jsonl` files and can be resumed from the CLI or from within the REPL itself.
+
+## Where sessions are stored
+
+Sessions are written to `.claw/sessions/` inside the **current working directory** when you launched `claw`.
+
+<Note>
+  Sessions are tied to the workspace they were created in. If you launch `claw` from a different directory, `--resume latest` will look for sessions in that directory's `.claw/sessions/` folder, not your previous workspace. Always `cd` into the correct project before resuming.
+</Note>
+
+```text
+<your-project>/
+└── .claw/
+    └── sessions/
+        ├── 01j9abc123def456.jsonl
+        └── 01j9xyz789ghi012.jsonl
+```
+
+## Resuming a session
+
+### From the command line
+
+<ParamField path="--resume latest" type="flag">
+  Resume the most recent session in the current workspace.
+
+  ```bash
+  claw --resume latest
+  ```
+</ParamField>
+
+<ParamField path="--resume <session-id>" type="flag">
+  Resume a specific session by its ID (the filename without the `.jsonl` extension).
+
+  ```bash
+  claw --resume 01j9abc123def456
+  ```
+</ParamField>
+
+<ParamField path="--resume <path>" type="flag">
+  Resume a session from an explicit file path.
+
+  ```bash
+  claw --resume .claw/sessions/01j9abc123def456.jsonl
+  ```
+</ParamField>
+
+### Running slash commands on resume
+
+You can pass slash commands directly after `--resume` to run them immediately when the session loads, without waiting for the interactive prompt.
+
+```bash
+# Resume and show status
+claw --resume latest /status
+
+# Resume and show both status and diff
+claw --resume latest /status /diff
+
+# Resume and run the preflight doctor check
+claw --resume latest /doctor
+```
+
+## Interactive session commands
+
+Once inside the REPL, use these slash commands to manage the session:
+
+| Command | Description |
+|---------|-------------|
+| `/session` | Inspect the current session ID, turn count, and metadata. |
+| `/export` | Export the session transcript to a file. |
+| `/compact` | Summarise and compact the conversation to reclaim context window space. |
+| `/clear` | Clear the conversation context. The session file is preserved but the in-memory context is reset. |
+| `/resume` | Resume a different session from within the REPL. |
+
+## Tracking cost and usage
+
+These commands give you visibility into token consumption for the current session:
+
+| Command | Description |
+|---------|-------------|
+| `/cost` | Estimated API cost for the session so far. |
+| `/usage` | Token usage broken down by role and turn. |
+| `/stats` | Extended statistics including tool call counts and latency. |
+
+## JSON output for scripting
+
+Pass `--output-format json` to get machine-readable session output. This works with any subcommand or prompt:
+
+```bash
+# One-shot prompt with JSON output
+claw --output-format json prompt "status"
+
+# Resume a session and emit JSON
+claw --output-format json --resume latest prompt "what did we do last time?"
+```
+
+The JSON output includes the full assistant response, tool calls, and usage metadata, making it easy to integrate `claw` into CI pipelines or post-processing scripts.
+
+## Typical session workflow
+
+<Steps>
+  <Step title="Start a session">
+    Launch the REPL in your project directory. A new session file is created automatically.
+
+    ```bash
+    cd my-project
+    claw
+    ```
+  </Step>
+
+  <Step title="Do your work">
+    Issue prompts, run slash commands, and make changes. All turns are saved to `.claw/sessions/` continuously.
+  </Step>
+
+  <Step title="Exit and return later">
+    Exit the REPL with `Ctrl+D` or `/exit`. Your session is fully persisted.
+  </Step>
+
+  <Step title="Resume where you left off">
+    Come back the next day and pick up the conversation:
+
+    ```bash
+    cd my-project
+    claw --resume latest
+    ```
+  </Step>
+
+  <Step title="Compact when context grows large">
+    If the session becomes long, compact it to save context window space without losing the work:
+
+    ```bash
+    /compact
+    ```
+  </Step>
+</Steps>

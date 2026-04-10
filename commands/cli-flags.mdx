@@ -1,0 +1,160 @@
+---
+title: 'Claw CLI global flags, subcommands, and permission modes'
+description: 'Complete reference for every flag, permission mode, model alias, and top-level subcommand available in the claw binary. Includes bash examples.'
+---
+
+The `claw` binary accepts global flags that control the model, output format, and permission policy, followed by an optional subcommand. When no subcommand is given, `claw` drops into an interactive REPL.
+
+```bash
+claw [OPTIONS] [COMMAND]
+```
+
+## Global flags
+
+<ParamField path="--model" type="string">
+  The model to use for the session. Accepts a short alias (`opus`, `sonnet`, `haiku`), a full model ID (`claude-sonnet-4-6`), or a provider-prefixed slug (`openai/gpt-4.1-mini`).
+
+  ```bash
+  claw --model sonnet prompt "review this diff"
+  claw --model opus
+  claw --model openai/gpt-4.1-mini prompt "hello"
+  ```
+</ParamField>
+
+<ParamField path="--output-format" type="text | json" default="text">
+  Controls how `claw` writes its output. Use `json` for scripting and CI pipelines.
+
+  ```bash
+  claw --output-format json prompt "summarize src/main.rs"
+  ```
+</ParamField>
+
+<ParamField path="--permission-mode" type="read-only | workspace-write | danger-full-access">
+  Sets the permission policy for tool calls made during the session. See [Permission modes](#permission-modes) below.
+
+  ```bash
+  claw --permission-mode read-only prompt "summarize Cargo.toml"
+  claw --permission-mode workspace-write prompt "update README.md"
+  ```
+</ParamField>
+
+<ParamField path="--dangerously-skip-permissions">
+  Bypasses all permission checks. Equivalent to `danger-full-access` but skips confirmation prompts entirely. Use only in trusted automation environments.
+
+  ```bash
+  claw --dangerously-skip-permissions prompt "apply all pending patches"
+  ```
+</ParamField>
+
+<ParamField path="--allowedTools" type="string">
+  Comma-separated list of tool names the agent is permitted to call. Restricts the tool surface without changing the overall permission mode.
+
+  ```bash
+  claw --allowedTools read,glob "inspect the runtime crate"
+  ```
+</ParamField>
+
+<ParamField path="--resume" type="latest | session-id | path">
+  Resumes a previous session. Pass `latest` to continue the most recent session, a specific session ID, or a path to a `.jsonl` session file. The session is loaded from `.claw/sessions/` in the current workspace.
+
+  ```bash
+  claw --resume latest
+  claw --resume latest /status /diff
+  claw --resume 01j9abc123def456
+  ```
+</ParamField>
+
+<ParamField path="--version, -V">
+  Prints the `claw` binary version and exits.
+
+  ```bash
+  claw --version
+  claw -V
+  ```
+</ParamField>
+
+## Permission modes
+
+| Mode | What the agent can do |
+|------|-----------------------|
+| `read-only` | Read files, run glob/grep searches, fetch URLs. No writes, no shell execution. |
+| `workspace-write` | Everything in `read-only`, plus writing and editing files within the current workspace. |
+| `danger-full-access` | Unrestricted tool access including arbitrary shell commands. This is the default permission level. |
+
+<Warning>
+  `danger-full-access` is the default. Always use `read-only` or `workspace-write` when running untrusted prompts or in shared environments.
+</Warning>
+
+## Model aliases
+
+Short aliases resolve to specific versioned model IDs. The default model is `claude-opus-4-6`.
+
+| Alias | Resolved model | Max output tokens | Context window |
+|-------|---------------|:-----------------:|:--------------:|
+| `opus` | `claude-opus-4-6` | 32 000 | 200 000 |
+| `sonnet` | `claude-sonnet-4-6` | 64 000 | 200 000 |
+| `haiku` | `claude-haiku-4-5-20251213` | 64 000 | 200 000 |
+
+Any string that does not match an alias is passed through verbatim, so full model IDs and OpenRouter slugs work as-is.
+
+You can define custom aliases in a settings file:
+
+```json ~/.claw/settings.json
+{
+  "aliases": {
+    "fast": "claude-haiku-4-5-20251213",
+    "smart": "claude-opus-4-6",
+    "cheap": "grok-3-mini"
+  }
+}
+```
+
+## Top-level subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `prompt <text>` | Run a single prompt and exit. Useful for scripting. |
+| `help` | Print help text and exit. |
+| `version` | Print version and exit. |
+| `status` | Show the current session status, model, and config. |
+| `sandbox` | Display sandbox and permission configuration. |
+| `dump-manifests` | Dump all registered tool and prompt manifests as JSON. |
+| `bootstrap-plan` | Print the bootstrap plan used to initialise a session. |
+| `agents` | List registered sub-agents. |
+| `mcp` | Inspect MCP server configuration and lifecycle. |
+| `skills` | List available skills. |
+| `system-prompt` | Print the resolved system prompt. Accepts `--cwd` and `--date` flags. |
+| `login` | Authenticate via OAuth and persist credentials locally. |
+| `logout` | Remove locally persisted OAuth credentials. |
+| `init` | Initialise a new `claw` workspace in the current directory. |
+
+### Examples
+
+```bash
+# One-shot prompt
+claw prompt "summarize this repository"
+
+# Shorthand — any bare string is treated as a prompt
+claw "explain rust/crates/runtime/src/lib.rs"
+
+# Inspect status without entering the REPL
+claw status
+
+# Print the system prompt with a specific date
+claw system-prompt --cwd .. --date 2026-04-04
+
+# OAuth login
+claw login
+claw logout
+
+# List available agents and MCP servers
+claw agents
+claw mcp
+
+# Dump all manifests as JSON
+claw --output-format json dump-manifests
+```
+
+<Tip>
+  Run `claw --help` or `claw help` to see the live canonical help text, which reflects any commands added since this page was last updated.
+</Tip>

@@ -1,0 +1,167 @@
+---
+title: 'Claw interactive REPL slash commands reference'
+description: 'Every slash command in the claw REPL grouped by category — session, workspace/git, discovery, automation, and plugin management — with sub-command details.'
+---
+
+When you start `claw` without a subcommand it opens an interactive REPL. Slash commands control the session, inspect state, and trigger built-in workflows. Tab completion expands slash commands, model aliases, permission modes, and recent session IDs as you type.
+
+```bash
+claw          # open the REPL
+/help         # list all slash commands
+```
+
+## Commands by category
+
+<AccordionGroup>
+  <Accordion title="Session & visibility">
+    Commands for inspecting the current session, costs, and version information.
+
+    | Command | Description |
+    |---------|-------------|
+    | `/help` | Print all available slash commands. |
+    | `/status` | Show model, permission mode, session ID, and config summary. |
+    | `/sandbox` | Display the active sandbox and permission policy. |
+    | `/cost` | Show estimated API cost for the current session. |
+    | `/resume` | Resume a previous session from within the REPL. |
+    | `/session` | Inspect and manage the current session. |
+    | `/version` | Print the `claw` binary version. |
+    | `/usage` | Show token usage breakdown for the session. |
+    | `/stats` | Show extended usage statistics. |
+  </Accordion>
+
+  <Accordion title="Workspace & git">
+    Commands for managing files, memory, and git operations in the workspace.
+
+    | Command | Description |
+    |---------|-------------|
+    | `/compact` | Compact the conversation to reduce context length. |
+    | `/clear` | Clear the current conversation context. |
+    | `/config` | View or edit the active configuration. |
+    | `/memory` | View and edit the project memory (`CLAUDE.md`). |
+    | `/init` | Initialise a `claw` workspace in the current directory. |
+    | `/diff` | Show the git diff for the current workspace. |
+    | `/commit` | Stage and commit changes using an AI-generated message. |
+    | `/pr` | Open or describe a pull request. |
+    | `/issue` | Create or inspect a GitHub issue. |
+    | `/export` | Export the current session transcript. |
+    | `/hooks` | Inspect and manage lifecycle hooks. |
+    | `/files` | List files tracked in the current workspace. |
+    | `/branch` | Show or switch the current git branch. |
+    | `/release-notes` | Generate release notes from recent commits. |
+    | `/add-dir` | Add an additional directory to the session context. |
+  </Accordion>
+
+  <Accordion title="Discovery & debugging">
+    Commands for exploring installed tooling, running diagnostics, and inspecting context.
+
+    | Command | Description |
+    |---------|-------------|
+    | `/mcp` | Inspect MCP server configuration. See [/mcp sub-commands](#mcp) below. |
+    | `/agents` | List registered sub-agents. See [/agents sub-commands](#agents) below. |
+    | `/skills` | Manage skills. See [/skills sub-commands](#skills) below. |
+    | `/doctor` | Run the built-in setup and preflight diagnostic. |
+    | `/tasks` | Show in-progress todo/task items. |
+    | `/context` | Inspect the current context window usage. |
+    | `/desktop` | Inspect desktop integration settings. |
+    | `/ide` | Inspect IDE integration settings. |
+  </Accordion>
+
+  <Accordion title="Automation & analysis">
+    Commands for code review, security analysis, and session automation.
+
+    | Command | Description |
+    |---------|-------------|
+    | `/review` | Run an AI code review on recent changes. |
+    | `/advisor` | Get architectural or design advice. |
+    | `/insights` | Generate insights from the current codebase. |
+    | `/security-review` | Run a security-focused review. |
+    | `/subagent` | Manage running sub-agents. See [/subagent sub-commands](#subagent) below. |
+    | `/team` | Inspect team and collaboration settings. |
+    | `/telemetry` | View session telemetry and trace data. |
+    | `/providers` | List configured model providers. |
+    | `/cron` | Manage scheduled automation tasks. |
+  </Accordion>
+
+  <Accordion title="Plugin management">
+    The `/plugin` command (aliases: `/plugins`, `/marketplace`) manages the plugin lifecycle.
+
+    | Command | Description |
+    |---------|-------------|
+    | `/plugin list` | List all installed plugins and their enabled/disabled state. |
+    | `/plugin install <path>` | Install a plugin from a local path or URL. |
+    | `/plugin enable <name>` | Enable a previously disabled plugin. |
+    | `/plugin disable <name>` | Disable a plugin without uninstalling it. |
+    | `/plugin uninstall <id>` | Permanently remove a plugin. |
+    | `/plugin update <id>` | Update a plugin to the latest version. |
+
+    ```text
+    /plugin list
+    /plugin install ./my-plugin
+    /plugin enable my-plugin
+    /plugin disable my-plugin
+    /plugin uninstall my-plugin-id
+    /plugin update my-plugin-id
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Key command details
+
+### /plugin
+
+Aliases: `/plugins`, `/marketplace`
+
+```text
+/plugin list
+/plugin install <path>
+/plugin enable <name>
+/plugin disable <name>
+/plugin uninstall <id>
+/plugin update <id>
+```
+
+### /skills
+
+```text
+/skills list
+/skills install <path>
+/skills help
+```
+
+| Sub-command | Description |
+|-------------|-------------|
+| `list` | Print all skills discovered in `.claw/skills/` and user-level skill directories. |
+| `install <path>` | Install a skill from a local path. |
+| `help` | Print usage information for the `/skills` command. |
+
+### /subagent
+
+```text
+/subagent list
+/subagent steer <target> <message>
+/subagent kill <id>
+```
+
+| Sub-command | Description |
+|-------------|-------------|
+| `list` | List all active sub-agents and their current status. |
+| `steer <target> <message>` | Send a steering message to a running sub-agent. |
+| `kill <id>` | Terminate a sub-agent by ID. |
+
+### /mcp
+
+```text
+/mcp list
+/mcp show <server>
+/mcp help
+```
+
+| Sub-command | Description |
+|-------------|-------------|
+| `list` | List all configured MCP servers and their lifecycle state. |
+| `show <server>` | Print configuration and tool manifest for a specific MCP server. |
+| `help` | Print usage information for the `/mcp` command. |
+
+<Note>
+  The REPL supports tab completion for all slash commands. Press `Tab` after typing `/` to see the full list, or after a command name to expand sub-commands and arguments.
+</Note>

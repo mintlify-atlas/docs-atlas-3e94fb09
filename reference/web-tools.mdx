@@ -1,0 +1,110 @@
+---
+title: "Web tools: WebSearch and WebFetch in Claw Code"
+description: "Reference for the WebSearch and WebFetch built-in tools in Claw Code — parameters, HTTP proxy support, permission requirements, and REPL usage examples."
+---
+
+Claw Code exposes two web tools: `WebSearch` for querying the web and returning cited results, and `WebFetch` for retrieving and summarizing a specific URL. Both tools require only `read-only` permission and are available in all permission modes.
+
+Outbound HTTP requests from both tools respect the proxy configuration set in the session. See [HTTP proxy support](#http-proxy-support) below.
+
+## WebSearch
+
+Search the web for current information and return a list of cited results.
+
+**Permission:** `read-only`
+
+<ParamField path="query" type="string" required>
+  The search query. Must be at least 2 characters long.
+</ParamField>
+
+<ParamField path="allowed_domains" type="array">
+  Restrict results to pages on these domains. Each entry is a domain string (e.g. `"docs.rust-lang.org"`). When set, results from other domains are filtered out.
+</ParamField>
+
+<ParamField path="blocked_domains" type="array">
+  Exclude results from these domains. Takes precedence over `allowed_domains` if both are set.
+</ParamField>
+
+### Example
+
+```json
+{
+  "query": "Rust async runtime comparison tokio vs async-std 2026",
+  "allowed_domains": ["blog.rust-lang.org", "docs.rs"]
+}
+```
+
+Inside the REPL, the model will call `WebSearch` automatically when it needs current information. You can also nudge it explicitly:
+
+```
+> search for the latest Anthropic API changelog
+```
+
+## WebFetch
+
+Fetch a URL, convert the page into readable text, and answer a prompt about it.
+
+**Permission:** `read-only`
+
+<ParamField path="url" type="string" required>
+  The URL to fetch. Must be a valid URI. HTTP URLs are accepted but HTTPS is preferred.
+</ParamField>
+
+<ParamField path="prompt" type="string" required>
+  The question or instruction to answer based on the fetched content. The tool retrieves the page and uses the prompt to focus the response — for example, `"summarize the breaking changes"` or `"what are the required parameters for this endpoint?"`.
+</ParamField>
+
+### Example
+
+```json
+{
+  "url": "https://docs.anthropic.com/en/api/messages",
+  "prompt": "What are the required fields for the Messages API request body?"
+}
+```
+
+REPL usage:
+
+```
+> fetch https://crates.io/crates/tokio and summarize the latest release notes
+```
+
+## HTTP proxy support
+
+Both `WebSearch` and `WebFetch` inherit the proxy configuration applied to the underlying `reqwest` HTTP client. Claw honours standard proxy environment variables (both upper- and lower-case spellings):
+
+```bash
+export HTTPS_PROXY="http://proxy.corp.example:3128"
+export HTTP_PROXY="http://proxy.corp.example:3128"
+export NO_PROXY="localhost,127.0.0.1,.corp.example"
+```
+
+For programmatic configuration, use the `proxy_url` field in `ProxyConfig`. When `proxy_url` is set it acts as a unified catch-all proxy for both HTTP and HTTPS traffic:
+
+```rust
+use api::{build_http_client_with, ProxyConfig};
+
+let config = ProxyConfig::from_proxy_url("http://proxy.corp.example:3128");
+let client = build_http_client_with(&config).expect("proxy client");
+```
+
+`NO_PROXY` accepts comma-separated host suffixes (`.corp.example`) and IP literals. Empty proxy values are treated as unset. If a proxy URL cannot be parsed, Claw falls back to a direct (no-proxy) client.
+
+<Tip>
+When both `HTTPS_PROXY` and `HTTP_PROXY` are set, the HTTPS proxy applies to `https://` requests and the HTTP proxy applies to `http://` requests. Use `proxy_url` instead if you want a single proxy for both schemes.
+</Tip>
+
+## Permission requirements
+
+| Tool | Required permission | Notes |
+|------|---------------------|-------|
+| `WebSearch` | `read-only` | Available in all modes |
+| `WebFetch` | `read-only` | Available in all modes |
+
+Both tools can be combined with `--allowedTools` to create a web-only restricted session:
+
+```bash
+./target/debug/claw --allowedTools WebSearch,WebFetch \
+  --permission-mode read-only \
+  prompt "find the latest Rust edition release notes"
+```

@@ -1,0 +1,170 @@
+---
+title: "Claw Code Rust workspace layout and crate map"
+description: "A reference map of all 9 crates in the Claw Code Rust workspace, their responsibilities, directory layout, and key workspace statistics."
+---
+
+The `rust/` workspace contains 9 crates totaling ~20K lines of Rust. Each crate has a focused responsibility — from the provider API layer through the permission enforcer, plugin manager, and the main `claw` binary itself.
+
+## Workspace layout
+
+```text
+rust/
+├── Cargo.toml              # Workspace root
+├── Cargo.lock
+└── crates/
+    ├── api/                # Provider clients + streaming + request preflight
+    ├── commands/           # Shared slash-command registry + help rendering
+    ├── compat-harness/     # TS manifest extraction harness
+    ├── mock-anthropic-service/ # Deterministic local Anthropic-compatible mock
+    ├── plugins/            # Plugin metadata, manager, install/enable/disable surfaces
+    ├── runtime/            # Session, config, permissions, MCP, prompts, auth/runtime loop
+    ├── rusty-claude-cli/   # Main CLI binary (`claw`)
+    ├── telemetry/          # Session tracing and usage telemetry types
+    └── tools/              # Built-in tools, skill resolution, tool search, agent runtime surfaces
+```
+
+## Crate reference
+
+<AccordionGroup>
+  <Accordion title="api — provider clients and streaming">
+    Provider clients, SSE streaming, request/response types, auth (API key + OAuth bearer), and request-size/context-window preflight checks.
+
+    This crate is responsible for all outbound HTTP communication with Anthropic and OpenAI-compatible endpoints. It owns:
+
+    - Anthropic Messages API client (direct and proxied)
+    - OpenAI-compatible client (OpenRouter, Ollama, xAI, DashScope)
+    - Server-sent event (SSE) streaming decoder
+    - Auth header construction for `x-api-key` and `Authorization: Bearer` flows
+    - `ProxyConfig` and `build_http_client_with()` for proxy support
+    - Context-window and request-size preflight to catch oversized requests before they hit the wire
+  </Accordion>
+
+  <Accordion title="commands — slash command registry">
+    Slash command definitions, parsing, help text generation, and JSON/text command rendering.
+
+    All REPL slash commands are registered and dispatched here. Responsibilities include:
+
+    - Central slash command registry (e.g. `/help`, `/status`, `/plugin`, `/mcp`, `/agents`, `/skills`)
+    - Command argument parsing and validation
+    - Help text generation for both human-readable and `--output-format json` consumers
+    - Delegation to `runtime` and `plugins` for commands that modify session or plugin state
+  </Accordion>
+
+  <Accordion title="compat-harness — TypeScript manifest extraction">
+    Extracts tool and prompt manifests from the upstream TypeScript source for cross-language parity checking.
+
+    This crate is a build-time and CI utility, not a runtime dependency. It:
+
+    - Parses the upstream TS source tree to extract tool schemas and prompt definitions
+    - Produces structured manifests that the Rust tool surface can be diffed against
+    - Powers `cargo run -p rusty-claude-cli -- dump-manifests`
+  </Accordion>
+
+  <Accordion title="mock-anthropic-service — deterministic mock">
+    Deterministic `/v1/messages` mock for CLI parity tests and local harness runs.
+
+    The mock service exposes a fully scripted Anthropic-compatible HTTP server used by the parity harness. Key properties:
+
+    - Serves deterministic, scenario-driven SSE response streams
+    - Supports all 10 harness scenarios (see [Parity Status](/reference/parity-status))
+    - Binds to a random port (`--bind 127.0.0.1:0`) to avoid conflicts in CI
+    - Requires no live Anthropic credentials — suitable for offline and CI runs
+
+    ```bash
+    cargo run -p mock-anthropic-service -- --bind 127.0.0.1:0
+    ```
+  </Accordion>
+
+  <Accordion title="plugins — plugin management">
+    Plugin metadata, install/enable/disable/update flows, plugin tool definitions, and hook integration surfaces.
+
+    This crate provides the full plugin lifecycle:
+
+    - `PluginManager::install()`, `enable()`, `disable()`, `uninstall()`, `update()`
+    - Plugin metadata schema and registry storage
+    - Plugin-contributed tool definitions that are merged into the active tool surface at runtime
+    - Hook integration surfaces so plugins can register lifecycle hooks (pre-tool, post-tool, etc.)
+    - Wired into `commands` for `/plugin` slash command dispatch
+  </Accordion>
+
+  <Accordion title="runtime — session and permission core">
+    `ConversationRuntime`, config loading, session persistence, permission policy, MCP client lifecycle, system prompt assembly, and usage tracking.
+
+    This is the central coordination crate. It owns:
+
+    - `ConversationRuntime` — the main conversation loop, turn management, and tool dispatch coordination
+    - `ConfigLoader::discover()` — loads and merges config from user → project → local order
+    - `PermissionEnforcer` — `check_file_write()`, `check_bash()`, and policy authorization (see [Permission Model](/reference/permission-model))
+    - MCP client lifecycle (`mcp_stdio.rs`, `mcp_client.rs`, `mcp.rs`) and `McpToolRegistry` bridge
+    - Session persistence and resume via `.claw/sessions/`
+    - System prompt assembly from CLAUDE.md / project memory
+    - Usage and cost tracking across turns
+    - `TaskRegistry`, `TeamRegistry`, `CronRegistry` — in-memory lifecycle registries
+    - `LspRegistry` — LSP client dispatch for diagnostics, hover, definition, and references
+    - `bash.rs` — timeout, background, and sandbox bash execution
+    - `sandbox.rs` — `unshare` capability probing and container signals
+    - `file_ops.rs` — binary detection, size limits (`MAX_READ_SIZE`, `MAX_WRITE_SIZE`), workspace boundary, symlink escape guards
+  </Accordion>
+
+  <Accordion title="rusty-claude-cli — main binary">
+    REPL, one-shot prompt, direct CLI subcommands, streaming display, tool call rendering, and CLI argument parsing. **This is the `claw` binary.**
+
+    Entry point for all user-facing interactions:
+
+    - Interactive REPL with `rustyline` (tab completion for slash commands, model aliases, permission modes, session IDs)
+    - One-shot `claw prompt "<text>"` mode
+    - Direct subcommands: `status`, `sandbox`, `agents`, `mcp`, `skills`, `doctor`, `system-prompt`, `login`, `logout`, `init`, `dump-manifests`, `bootstrap-plan`
+    - Streaming ANSI display and tool call rendering
+    - `--output-format text|json` for machine-readable output
+    - CLI flags: `--model`, `--permission-mode`, `--dangerously-skip-permissions`, `--allowedTools`, `--resume`
+    - Integration test harness at `tests/mock_parity_harness.rs`
+
+    ```bash
+    cargo run -p rusty-claude-cli -- --help
+    ```
+  </Accordion>
+
+  <Accordion title="telemetry — session trace events">
+    Session trace events and supporting telemetry payloads.
+
+    A lightweight types-and-serialization crate that defines:
+
+    - Structured trace event types emitted during a conversation session
+    - Usage telemetry payloads (token counts, tool call counts, timing)
+    - Serialization targets for the `--output-format json` surface and session export
+  </Accordion>
+
+  <Accordion title="tools — built-in tool surface">
+    Tool specs and execution for all 40 built-in tools.
+
+    This crate defines the complete tool surface exposed to the model:
+
+    - `mvp_tool_specs()` — returns all 40 registered `ToolSpec` values
+    - Core execution: `Bash`, `ReadFile`, `WriteFile`, `EditFile`, `GlobSearch`, `GrepSearch`
+    - Web tools: `WebFetch`, `WebSearch`
+    - Agent and sub-agent surfaces: `Agent`, `ToolSearch`
+    - Productivity tools: `TodoWrite`, `NotebookEdit`, `Skill`, `Sleep`, `SendUserMessage`
+    - Control tools: `Config`, `EnterPlanMode`, `ExitPlanMode`, `StructuredOutput`, `REPL`, `PowerShell`
+    - Registry-backed tools (wired via `runtime`): `Task*`, `Team*`, `Cron*`, `LSP`, MCP tools
+    - `enforce_permission_check()` — per-tool permission gating before execution
+    - `execute_tool()` — central dispatch for all tool calls
+  </Accordion>
+</AccordionGroup>
+
+## Workspace statistics
+
+| Stat | Value |
+|------|-------|
+| Lines of Rust | ~20K |
+| Crates | 9 |
+| Binary name | `claw` |
+| Default model | `claude-opus-4-6` |
+| Default permission mode | `danger-full-access` |
+
+## Model aliases
+
+| Alias | Resolves to |
+|-------|------------|
+| `opus` | `claude-opus-4-6` |
+| `sonnet` | `claude-sonnet-4-6` |
+| `haiku` | `claude-haiku-4-5-20251213` |

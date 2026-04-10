@@ -1,0 +1,69 @@
+---
+title: "Claw Code: Rust CLI agent harness for autonomous coding"
+description: "Claw Code is a Rust CLI agent harness. Connect to Anthropic, xAI, OpenAI-compatible, and local providers with sessions, plugins, and MCP server support."
+---
+
+Claw Code is the open-source Rust implementation of the `claw` CLI agent harness. It gives you an interactive REPL, one-shot prompt execution, session persistence, a permission system, a plugin ecosystem, and MCP server management — all wired to multiple AI providers through a single binary.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build from source and run your first prompt in under five minutes.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Prerequisites, build steps, and platform-specific notes for Linux, macOS, and Windows.
+  </Card>
+  <Card title="CLI flags and commands" icon="terminal" href="/commands/cli-flags">
+    Every flag, subcommand, and permission mode the `claw` binary accepts.
+  </Card>
+  <Card title="Authentication" icon="key" href="/configuration/authentication">
+    API keys, OAuth, and per-provider credential routing explained.
+  </Card>
+  <Card title="Providers and models" icon="microchip" href="/configuration/providers">
+    Connect to Anthropic, OpenAI, OpenRouter, Ollama, xAI, and DashScope.
+  </Card>
+  <Card title="Plugins" icon="puzzle-piece" href="/extending/plugins">
+    Install, enable, and build plugins that extend the tool surface.
+  </Card>
+</CardGroup>
+
+## What Claw Code is
+
+Claw Code is a **build-from-source** CLI. There is no hosted service and no npm/PyPI package to install. You clone the repo, run `cargo build`, and get the `claw` binary. The binary talks directly to the AI provider of your choice using your own credentials.
+
+The project is designed to be **clawable** — meaning it is operated as much by autonomous coding agents as by humans. The same binary that a developer uses interactively in a terminal is the one that an agent orchestrator drives through sessions, hooks, and structured JSON output.
+
+<CardGroup cols={2}>
+  <Card title="Session management" icon="clock-rotate-left" href="/commands/session-management">
+    Persist and resume conversations across terminal sessions.
+  </Card>
+  <Card title="MCP servers" icon="server" href="/extending/mcp-servers">
+    Connect external tool servers via the Model Context Protocol.
+  </Card>
+  <Card title="Skills" icon="graduation-cap" href="/extending/skills">
+    Load domain-specific instruction sets into the agent context.
+  </Card>
+  <Card title="Container workflow" icon="docker" href="/deployment/container">
+    Run builds and tests inside Docker or Podman with bind mounts.
+  </Card>
+</CardGroup>
+
+## Key capabilities
+
+<Steps>
+  <Step title="Build and verify">
+    Clone the repo, run `cargo build --workspace` from `rust/`, and verify your setup with `claw doctor`.
+  </Step>
+  <Step title="Set credentials">
+    Export `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or another provider credential. Claw routes to the right backend automatically based on the model name prefix.
+  </Step>
+  <Step title="Run a prompt or open the REPL">
+    Use `claw prompt "your task"` for a one-shot run, or just `claw` to open the interactive REPL with tab-completion and slash commands.
+  </Step>
+  <Step title="Extend with plugins and MCP">
+    Install plugins with `/plugin install`, connect MCP servers via `.claw/settings.json`, and manage sessions with `/session` and `--resume`.
+  </Step>
+</Steps>
+
+<Note>
+  `cargo install claw-code` installs a deprecated stub — **not** this project. Build from source or use `cargo install agent-code` for the upstream binary. See the [installation guide](/installation) for details.
+</Note>

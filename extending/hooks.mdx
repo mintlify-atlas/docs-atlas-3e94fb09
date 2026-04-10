@@ -1,0 +1,135 @@
+---
+title: "Automate Claw Code workflows with lifecycle hooks"
+description: "Lifecycle hooks run shell scripts at key agent events. Configure them in settings.json or a plugin manifest to log, block, or transform tool calls."
+---
+
+Hooks are shell commands that Claw Code runs automatically at defined points in the agent's tool-call lifecycle. You can use hooks to log activity, enforce policies, transform tool inputs, or block tool calls outright — all without modifying the agent or its built-in tools.
+
+## Listing active hooks
+
+Inside the REPL, run `/hooks` to see every hook command currently configured:
+
+```bash
+/hooks
+```
+
+The output lists each hook type and the commands registered for it.
+
+## Configuring hooks in settings.json
+
+Hooks are declared in the `hooks` object in any `settings.json` file. Each key is a lifecycle event name; the value is an array of shell command strings that run in order when that event fires.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      "./scripts/audit-tool-call.sh"
+    ],
+    "PostToolUse": [
+      "python3 ./scripts/log-result.py"
+    ],
+    "PostToolUseFailure": [
+      "./scripts/alert-on-failure.sh"
+    ]
+  }
+}
+```
+
+Hook commands are evaluated by `sh -lc` on Linux and macOS, and by `cmd /C` on Windows. You can use any command that is available in your shell environment.
+
+## Hook types
+
+<AccordionGroup>
+  <Accordion title="PreToolUse">
+    Runs before the agent executes a tool call. Use this hook to audit, transform, or block tool calls.
+
+    If the hook script exits with code `2`, the tool call is **denied** and the agent receives a block message. Any other non-zero exit code is treated as a hook failure (the tool call still does not proceed).
+
+    Exiting with code `0` allows the tool call to continue. The hook can also return a JSON payload with `hookSpecificOutput.permissionDecision` to dynamically override the session's permission policy for that call.
+  </Accordion>
+  <Accordion title="PostToolUse">
+    Runs after a tool call completes successfully. Use this hook for logging, notifications, or side effects that should happen after each tool result.
+
+    The hook's exit code is informational: a non-zero exit is recorded as a hook failure but does not reverse the tool result.
+  </Accordion>
+  <Accordion title="PostToolUseFailure">
+    Runs when a tool call returns an error. Use this hook to send alerts, record diagnostics, or trigger recovery steps when a tool fails.
+  </Accordion>
+</AccordionGroup>
+
+## Stdin payload
+
+Every hook script receives a JSON payload on stdin. The payload describes the event and the tool call that triggered it:
+
+```json
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": { "command": "git status" },
+  "tool_input_json": "{\"command\":\"git status\"}",
+  "tool_output": null,
+  "tool_result_is_error": false
+}
+```
+
+For `PostToolUseFailure`, the `tool_error` field replaces `tool_output`:
+
+```json
+{
+  "hook_event_name": "PostToolUseFailure",
+  "tool_name": "Bash",
+  "tool_input": { "command": "make test" },
+  "tool_input_json": "{\"command\":\"make test\"}",
+  "tool_error": "exit status 1",
+  "tool_result_is_error": true
+}
+```
+
+The same data is also available via environment variables: `HOOK_EVENT`, `HOOK_TOOL_NAME`, `HOOK_TOOL_INPUT`, `HOOK_TOOL_IS_ERROR`, and `HOOK_TOOL_OUTPUT`.
+
+## Hook output
+
+A hook can write a JSON object to stdout to communicate back to the runtime:
+
+```json
+{
+  "systemMessage": "Audit entry recorded",
+  "continue": true,
+  "hookSpecificOutput": {
+    "permissionDecision": "allow",
+    "permissionDecisionReason": "Approved by pre-flight check",
+    "updatedInput": { "command": "git status --short" }
+  }
+}
+```
+
+| Field | Effect |
+|---|---|
+| `systemMessage` | Message shown in the session output |
+| `continue: false` or `decision: "block"` | Denies the tool call (same as exit code 2) |
+| `hookSpecificOutput.permissionDecision` | Overrides permission policy: `allow`, `deny`, or `ask` |
+| `hookSpecificOutput.updatedInput` | Replaces the tool's input JSON before execution |
+
+## Plugin hooks
+
+Plugins can declare hook scripts in their manifest. When a plugin is enabled, its hooks are merged with any hooks configured in `settings.json` and run together in declaration order.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": ["./hooks/pre.sh"],
+    "PostToolUse": ["./hooks/post.sh"],
+    "PostToolUseFailure": ["./hooks/failure.sh"]
+  }
+}
+```
+
+Plugin hooks support the same `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` events. Plugin manifests that declare other event names (such as those from the Claude Code plugin contract) will be rejected at load time.
+
+## Config validation
+
+The `hooks` object in each settings file is validated when Claw Code loads its configuration. A malformed `hooks` entry — for example, a non-array value or a missing required field — causes a `ConfigError` that aborts startup with an informative message. Fix the offending field in the appropriate `settings.json` before restarting.
+
+<Warning>
+On Linux and macOS, hook scripts must have the executable bit set. A script without execute permission will fail to start, and the hook runner will report the failure and stop processing further hooks in that chain. Run `chmod +x <script>` on any hook script before enabling it.
+</Warning>

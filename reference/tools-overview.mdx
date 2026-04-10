@@ -1,0 +1,166 @@
+---
+title: "Claw Code built-in tool specs: all 40 tools overview"
+description: "Overview of all 40 tool specs exposed by Claw Code, grouped by category with permission requirements and links to individual tool pages."
+---
+
+Claw exposes **40 tool specs** through `mvp_tool_specs()` in the `tools` crate. Every tool runs inside the current session and is gated by the active permission mode — `read-only`, `workspace-write`, or `danger-full-access`. Tools that exceed the current mode are blocked or escalated to the user before execution.
+
+## Permission modes
+
+| Mode | What it allows |
+|------|---------------|
+| `read-only` | Reads, searches, web fetches, LSP queries, task inspection |
+| `workspace-write` | Everything above plus file writes, edits, config changes, notebooks |
+| `danger-full-access` | Everything above plus bash, agents, task/team/cron creation, MCP auth |
+
+Pass `--permission-mode` at startup or use `EnterPlanMode` / `ExitPlanMode` tools to switch modes inside a session.
+
+## Tool categories
+
+### File tools
+
+<CardGroup cols={2}>
+  <Card title="bash" href="/reference/bash-tool">
+    Execute shell commands in the workspace. Requires `danger-full-access`.
+  </Card>
+  <Card title="read\_file, write\_file, edit\_file" href="/reference/file-tools">
+    Read, create, and patch files within the workspace boundary.
+  </Card>
+  <Card title="glob\_search" href="/reference/file-tools">
+    Find files by glob pattern. Read-only.
+  </Card>
+  <Card title="grep\_search" href="/reference/file-tools">
+    Search file contents with a regex pattern. Read-only.
+  </Card>
+</CardGroup>
+
+| Tool | Permission | Short description |
+|------|-----------|-------------------|
+| `bash` | `danger-full-access` | Run a shell command |
+| `read_file` | `read-only` | Read a text file |
+| `write_file` | `workspace-write` | Write a text file |
+| `edit_file` | `workspace-write` | Replace text in a file |
+| `glob_search` | `read-only` | Find files by glob |
+| `grep_search` | `read-only` | Search file contents |
+
+### Web tools
+
+<CardGroup cols={2}>
+  <Card title="WebFetch" href="/reference/web-tools">
+    Fetch a URL and answer a prompt about its content.
+  </Card>
+  <Card title="WebSearch" href="/reference/web-tools">
+    Search the web for current information with cited results.
+  </Card>
+</CardGroup>
+
+| Tool | Permission | Short description |
+|------|-----------|-------------------|
+| `WebFetch` | `read-only` | Fetch and summarize a URL |
+| `WebSearch` | `read-only` | Search the web |
+
+### Agent and orchestration tools
+
+<CardGroup cols={2}>
+  <Card title="Agent" href="/reference/agent-tools">
+    Launch a specialized sub-agent task.
+  </Card>
+  <Card title="TodoWrite" href="/reference/agent-tools">
+    Manage the structured task list for the session.
+  </Card>
+  <Card title="Skill" href="/reference/agent-tools">
+    Load a local skill definition into context.
+  </Card>
+  <Card title="ToolSearch" href="/reference/agent-tools">
+    Discover available deferred or specialized tools.
+  </Card>
+  <Card title="NotebookEdit" href="/reference/agent-tools">
+    Replace, insert, or delete Jupyter notebook cells.
+  </Card>
+  <Card title="Sleep" href="/reference/agent-tools">
+    Pause execution without holding a shell process.
+  </Card>
+  <Card title="SendUserMessage" href="/reference/agent-tools">
+    Send messages in multi-agent flows.
+  </Card>
+  <Card title="StructuredOutput" href="/reference/agent-tools">
+    Return machine-readable output from an agent.
+  </Card>
+</CardGroup>
+
+| Tool | Permission | Short description |
+|------|-----------|-------------------|
+| `Agent` | `danger-full-access` | Launch sub-agent with handoff metadata |
+| `TodoWrite` | `workspace-write` | Update session task list |
+| `Skill` | `read-only` | Load skill instructions |
+| `ToolSearch` | `read-only` | Search available tools |
+| `NotebookEdit` | `workspace-write` | Edit Jupyter notebook cells |
+| `Sleep` | `read-only` | Wait for N milliseconds |
+| `SendUserMessage` | `read-only` | Send message to user |
+| `StructuredOutput` | `read-only` | Emit structured JSON output |
+
+### Task/orchestration tools
+
+Registry-backed in-memory lifecycle management. Task tools reached full registry wiring in lane 4–5 of the 9-lane checkpoint.
+
+| Tool | Permission | Short description |
+|------|-----------|-------------------|
+| `TaskCreate` | `danger-full-access` | Create a background task |
+| `TaskGet` | `read-only` | Get task status by ID |
+| `TaskList` | `read-only` | List all tasks |
+| `TaskStop` | `danger-full-access` | Stop a running task |
+| `TaskUpdate` | `danger-full-access` | Send a message to a running task |
+| `TaskOutput` | `read-only` | Retrieve task output |
+| `TeamCreate` | `danger-full-access` | Create a team of sub-agents |
+| `TeamDelete` | `danger-full-access` | Delete a team and stop its tasks |
+| `CronCreate` | `danger-full-access` | Schedule a recurring task |
+| `CronDelete` | `danger-full-access` | Delete a scheduled task |
+| `CronList` | `read-only` | List scheduled tasks |
+
+### MCP tools
+
+<Note>
+MCP tools are registry-backed bridge implementations on `main`. Full end-to-end MCP transport and connection lifecycle are handled separately by `mcp_stdio.rs`, `mcp_client.rs`, and `mcp.rs` in the `runtime` crate.
+</Note>
+
+| Tool | Permission | Short description |
+|------|-----------|-------------------|
+| `ListMcpResources` | `read-only` | List resources from connected MCP servers |
+| `ReadMcpResource` | `read-only` | Read a resource by URI from an MCP server |
+| `McpAuth` | `danger-full-access` | Authenticate with an MCP server |
+| `MCP` | `danger-full-access` | Execute a tool on a connected MCP server |
+
+### Config and runtime tools
+
+| Tool | Permission | Short description |
+|------|-----------|-------------------|
+| `Config` | `workspace-write` | Get or set Claw Code settings |
+| `EnterPlanMode` | `workspace-write` | Enable planning mode override |
+| `ExitPlanMode` | `workspace-write` | Restore previous planning mode |
+| `StructuredOutput` | `read-only` | Return structured data |
+| `REPL` | `danger-full-access` | Execute code in a REPL subprocess |
+| `PowerShell` | `danger-full-access` | Execute a PowerShell command |
+| `AskUserQuestion` | `read-only` | Prompt the user for interactive input |
+| `RemoteTrigger` | `danger-full-access` | Trigger a remote webhook endpoint |
+
+### LSP tools
+
+| Tool | Permission | Short description |
+|------|-----------|-------------------|
+| `LSP` | `read-only` | Query language server for symbols, references, diagnostics, definition, hover |
+
+The `LSP` tool dispatches five `action` values: `symbols`, `references`, `diagnostics`, `definition`, and `hover`. Routing goes through `LspRegistry::dispatch()` in `runtime/src/lsp_client.rs`.
+
+## Using `--allowedTools`
+
+Restrict which tools are exposed to the model by passing a comma-separated list:
+
+```bash
+./target/debug/claw --allowedTools read_file,glob_search,grep_search prompt "find all TODOs"
+```
+
+Short aliases are supported: `read` → `read_file`, `write` → `write_file`, `edit` → `edit_file`, `glob` → `glob_search`, `grep` → `grep_search`.
+
+## Tool count
+
+`mvp_tool_specs()` currently exposes **40 tool specs**. The `Brief` alias is handled as an execution alias for `SendUserMessage` in `execute_tool()` but is not a separately listed spec. `TestingPermission` is test-only and not intended for production use.

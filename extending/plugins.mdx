@@ -1,0 +1,158 @@
+---
+title: "Install, enable, and manage Claw Code plugins"
+description: "Plugins add custom tools, lifecycle hooks, and commands to Claw Code. Install, enable, disable, and uninstall them with /plugin or settings.json."
+---
+
+Plugins extend Claw Code's tool surface with custom tools, lifecycle hooks, and slash commands. Each plugin ships a manifest that declares what it contributes, and the runtime loads, validates, and wires everything up automatically when the plugin is enabled.
+
+## Plugin lifecycle
+
+<Steps>
+  <Step title="Install">
+    Copy the plugin files into the install root and record the plugin in `~/.claw/plugins/installed.json`. Installed plugins are enabled by default.
+  </Step>
+  <Step title="Enable">
+    Mark the plugin active in `settings.json` so its tools and hooks are injected into every session.
+  </Step>
+  <Step title="Disable">
+    Suspend the plugin without removing it. Its files remain on disk; it contributes nothing to the tool surface until re-enabled.
+  </Step>
+  <Step title="Uninstall">
+    Remove the plugin files and erase its entry from the registry. Bundled plugins cannot be uninstalled — disable them instead.
+  </Step>
+</Steps>
+
+## Managing plugins with /plugin
+
+Use the `/plugin` slash command (aliases: `/plugins`, `/marketplace`) inside the REPL to manage plugins interactively.
+
+<Tabs>
+  <Tab title="List">
+    ```bash
+    /plugin list
+    ```
+    Shows every registered plugin with its name, version, kind (`builtin` / `bundled` / `external`), and enabled state.
+  </Tab>
+  <Tab title="Install">
+    ```bash
+    /plugin install <path>
+    ```
+    Install a plugin from a local directory path. The directory must contain a valid `.claude-plugin/plugin.json` manifest.
+  </Tab>
+  <Tab title="Enable / Disable">
+    ```bash
+    /plugin enable <name>
+    /plugin disable <name>
+    ```
+    Toggle a plugin on or off. Changes persist to `settings.json` immediately.
+  </Tab>
+  <Tab title="Uninstall">
+    ```bash
+    /plugin uninstall <id>
+    ```
+    Remove an external plugin permanently. Bundled plugins must be disabled instead.
+  </Tab>
+  <Tab title="Update">
+    ```bash
+    /plugin update <id>
+    ```
+    Pull the latest version from the plugin's original source and replace the installed copy.
+  </Tab>
+</Tabs>
+
+## Viewing plugin-backed agents from the CLI
+
+The `agents` subcommand lists agent surfaces, including those backed by plugins. Pass `--output-format json` for machine-readable output:
+
+```bash
+claw --output-format json agents
+```
+
+## Plugin manifest format
+
+Every plugin must include a manifest at `.claude-plugin/plugin.json` (or `plugin.json` directly in the plugin root). The manifest is a JSON file with the following structure:
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "Short description of what this plugin does",
+  "defaultEnabled": false,
+  "permissions": ["read", "write", "execute"],
+  "tools": [
+    {
+      "name": "my_tool",
+      "description": "What this tool does",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": { "type": "string" }
+        },
+        "required": ["target"]
+      },
+      "command": "./bin/my-tool",
+      "args": [],
+      "requiredPermission": "read-only"
+    }
+  ],
+  "hooks": {
+    "PreToolUse": ["./hooks/pre.sh"],
+    "PostToolUse": ["./hooks/post.sh"],
+    "PostToolUseFailure": ["./hooks/failure.sh"]
+  },
+  "lifecycle": {
+    "Init": ["./scripts/init.sh"],
+    "Shutdown": ["./scripts/shutdown.sh"]
+  },
+  "commands": [
+    {
+      "name": "my-command",
+      "description": "A custom slash command",
+      "command": "./bin/command.sh"
+    }
+  ]
+}
+```
+
+### Supported hook events
+
+| Field | When it runs |
+|---|---|
+| `PreToolUse` | Before every tool call |
+| `PostToolUse` | After a successful tool call |
+| `PostToolUseFailure` | After a tool call that returned an error |
+
+### Tool permission levels
+
+| Value | Required session permission |
+|---|---|
+| `read-only` | Any |
+| `workspace-write` | `workspace-write` or higher |
+| `danger-full-access` | `danger-full-access` only |
+
+<Warning>
+If a hook script path listed in the manifest does not exist at runtime, validation fails and the plugin will not load. Ensure every path in `hooks` and `lifecycle` points to an existing file before enabling the plugin.
+</Warning>
+
+<Note>
+Claw Code discovers plugins from two locations: `~/.claw/plugins` for user-level plugins and `.claw/plugins` in the current workspace for project-level plugins. External directories can also be added via `plugins.externalDirectories` in `settings.json`.
+</Note>
+
+## Configuring plugins in settings.json
+
+Plugin state is stored in `settings.json`. You can also configure plugin paths directly:
+
+```json
+{
+  "enabledPlugins": {
+    "external/my-plugin": true,
+    "bundled/example": false
+  },
+  "plugins": {
+    "externalDirectories": ["/opt/claw-plugins"],
+    "installRoot": "~/.claw/plugins/installed"
+  }
+}
+```
+
+The `enabledPlugins` map is keyed by plugin ID (formatted as `<kind>/<name>`). Entries written by `/plugin enable` and `/plugin disable` live here.

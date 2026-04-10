@@ -1,0 +1,71 @@
+---
+title: "Authenticate Claw Code with API keys and OAuth"
+description: "Claw Code supports three credential shapes: Anthropic API keys, OAuth access tokens, and OpenRouter keys. Each maps to a different env var and HTTP header."
+---
+
+Claw Code talks to multiple AI providers, and each expects credentials in a different form. Using the wrong env var for a given credential shape is the most common cause of 401 errors. This page explains each method and how to avoid the mix-ups.
+
+## Credential shapes at a glance
+
+| Credential shape | Env var | HTTP header | Typical source |
+|---|---|---|---|
+| `sk-ant-*` API key | `ANTHROPIC_API_KEY` | `x-api-key: sk-ant-...` | [console.anthropic.com](https://console.anthropic.com) |
+| OAuth access token (opaque) | `ANTHROPIC_AUTH_TOKEN` | `Authorization: Bearer ...` | `claw login` or an Anthropic-compatible proxy that mints Bearer tokens |
+| OpenRouter key (`sk-or-v1-*`) | `OPENAI_API_KEY` + `OPENAI_BASE_URL=https://openrouter.ai/api/v1` | `Authorization: Bearer ...` | [openrouter.ai/keys](https://openrouter.ai/keys) |
+
+## API key
+
+Get an API key from [console.anthropic.com](https://console.anthropic.com) and export it before running `claw`:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+Claw Code sends this value in the `x-api-key` HTTP header, which is what Anthropic's API expects for `sk-ant-*` keys.
+
+## OAuth
+
+OAuth lets you authenticate without managing a long-lived API key. Claw Code opens a browser window and persists the resulting token locally.
+
+```bash
+claw login
+```
+
+To clear the stored token:
+
+```bash
+claw logout
+```
+
+<Note>
+  OAuth is Anthropic-only. When `OPENAI_BASE_URL` is set, use API-key authentication instead of `claw login`.
+</Note>
+
+## `ANTHROPIC_AUTH_TOKEN` vs `ANTHROPIC_API_KEY`
+
+<Warning>
+  **Do not paste an `sk-ant-*` key into `ANTHROPIC_AUTH_TOKEN`.** Anthropic's API rejects `sk-ant-*` keys sent over the `Authorization: Bearer` header with `401 Invalid bearer token`.
+
+  - `ANTHROPIC_API_KEY` → sent as `x-api-key: sk-ant-...` ✓
+  - `ANTHROPIC_AUTH_TOKEN` → sent as `Authorization: Bearer ...` (for OAuth tokens and proxy-minted tokens only)
+
+  If you see a 401 and your key starts with `sk-ant-`, move it to `ANTHROPIC_API_KEY`. Recent `claw` builds detect this exact pattern and print a hint alongside the error.
+</Warning>
+
+## HTTP proxy
+
+Claw Code honours the standard proxy environment variables for all outbound requests (Anthropic, OpenAI-compatible, and xAI endpoints):
+
+```bash
+export HTTPS_PROXY="http://proxy.corp.example:3128"
+export HTTP_PROXY="http://proxy.corp.example:3128"
+export NO_PROXY="localhost,127.0.0.1,.corp.example"
+```
+
+Both upper- and lower-case spellings (`HTTPS_PROXY` / `https_proxy`) are accepted.
+
+`NO_PROXY` accepts a comma-separated list of host suffixes (e.g. `.corp.example`) and IP literals. Empty values are treated as unset.
+
+<Tip>
+  If a proxy URL cannot be parsed, Claw Code falls back to a direct connection so existing workflows continue to work. Double-check the URL if you expect traffic to be tunnelled.
+</Tip>

@@ -1,0 +1,64 @@
+---
+title: "Route Claw Code requests through an HTTP proxy"
+description: "Configure HTTPS_PROXY, HTTP_PROXY, and NO_PROXY env vars or the proxy_url field to tunnel claw outbound traffic through a corporate or local proxy."
+---
+
+`claw` honours the standard `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY` environment variables when issuing outbound requests to Anthropic, OpenAI-compatible, and xAI endpoints. Both upper- and lower-case spellings are accepted. Set the variables before launching the CLI and the underlying `reqwest` HTTP client is configured automatically — no code changes required.
+
+For programmatic use, the `ProxyConfig` type in the `api` crate exposes equivalent fields that can be populated from a config file, a CLI flag, or any other source.
+
+## Environment variables
+
+Export the variables in your shell before running `claw`:
+
+```bash
+export HTTPS_PROXY="http://proxy.corp.example:3128"
+export HTTP_PROXY="http://proxy.corp.example:3128"
+export NO_PROXY="localhost,127.0.0.1,.corp.example"
+
+cd rust
+./target/debug/claw prompt "hello via the corporate proxy"
+```
+
+`HTTPS_PROXY` applies to `https://` destinations; `HTTP_PROXY` applies to `http://` destinations. In most corporate environments both point at the same upstream proxy.
+
+You can also set `ANTHROPIC_BASE_URL` to redirect all Anthropic traffic to a proxy or local service that speaks the Anthropic Messages API:
+
+```bash
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8080"
+export ANTHROPIC_AUTH_TOKEN="local-dev-token"
+
+cd rust
+./target/debug/claw --model "claude-sonnet-4-6" prompt "reply with the word ready"
+```
+
+## Programmatic `proxy_url` config
+
+As an alternative to per-scheme environment variables, the `ProxyConfig` type exposes a `proxy_url` field that acts as a single catch-all proxy for both HTTP and HTTPS traffic. When `proxy_url` is set it takes precedence over the separate `http_proxy` and `https_proxy` fields.
+
+```rust
+use api::{build_http_client_with, ProxyConfig};
+
+// From a single unified URL (config file, CLI flag, etc.)
+let config = ProxyConfig::from_proxy_url("http://proxy.corp.example:3128");
+let client = build_http_client_with(&config).expect("proxy client");
+
+// Or set the field directly alongside NO_PROXY
+let config = ProxyConfig {
+    proxy_url: Some("http://proxy.corp.example:3128".to_string()),
+    no_proxy: Some("localhost,127.0.0.1".to_string()),
+    ..ProxyConfig::default()
+};
+let client = build_http_client_with(&config).expect("proxy client");
+```
+
+## Rules
+
+- **`proxy_url` takes precedence.** When `proxy_url` is set, it applies to both `http://` and `https://` destinations and overrides the per-scheme `http_proxy` / `https_proxy` fields.
+- **`NO_PROXY` format.** Accepts a comma-separated list of host suffixes (e.g. `.corp.example`) and IP address literals (e.g. `127.0.0.1`). A suffix match means any hostname ending with that suffix bypasses the proxy.
+- **Empty values are treated as unset.** Leaving `HTTPS_PROXY=""` in your shell will not enable a proxy — the empty string is ignored.
+- **Parse failures fall back to direct.** If a proxy URL cannot be parsed, `claw` falls back to a direct (no-proxy) client so existing workflows keep working. Double-check the URL if you expected traffic to be tunnelled.
+
+<Warning>
+  If your proxy URL contains special characters (such as `@` or `:` in a password), percent-encode them. An un-encoded `@` in the userinfo portion will cause URL parsing to fail and `claw` will silently use a direct connection.
+</Warning>

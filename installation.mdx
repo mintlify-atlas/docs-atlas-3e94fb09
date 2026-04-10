@@ -1,0 +1,147 @@
+---
+title: "Build and install the Claw Code binary from source"
+description: "Set up the Rust toolchain, clone ultraworkers/claw-code, build all 9 workspace crates with cargo, and verify with cargo test. Covers Linux, macOS, and Windows."
+---
+
+Claw Code is a **build-from-source** project. There is no hosted binary, no npm package, and no PyPI distribution. You clone the repository, build the Rust workspace, and get the `claw` binary — which you can then add to your `PATH` or invoke directly from the build output directory.
+
+<Warning>
+  **`cargo install claw-code` installs the wrong thing.** The `claw-code` crate on crates.io is a deprecated stub. It places `claw-code-deprecated.exe` on your system — not `claw` — and only prints `"claw-code has been renamed to agent-code"`. Do not use it. Use the build steps below, or install the upstream binary with `cargo install agent-code`.
+</Warning>
+
+## Prerequisites
+
+You need the following tools before building:
+
+- **Rust toolchain** — install via [rustup.rs](https://rustup.rs). The installer sets up `rustc`, `cargo`, and `rustup` together. On Windows, close and reopen your terminal after installation so the PATH update takes effect.
+- **cargo** — included with the Rust toolchain. Verify with `cargo --version`.
+- **git** — to clone the repository. Verify with `git --version`.
+
+No other system dependencies are required for a basic build. The workspace includes a `Containerfile` if you prefer an isolated build environment — see the [container workflow](/deployment/container).
+
+## Build steps
+
+<Tabs>
+  <Tab title="Linux / macOS">
+    <Steps>
+      <Step title="Verify prerequisites">
+        ```bash
+        cargo --version
+        git --version
+        ```
+
+        Both commands should print a version string. If `cargo` is not found, install Rust from [rustup.rs](https://rustup.rs) and reopen your terminal.
+      </Step>
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/ultraworkers/claw-code
+        cd claw-code/rust
+        ```
+
+        All build commands run from the `rust/` directory, which is the Cargo workspace root.
+      </Step>
+      <Step title="Build the workspace">
+        ```bash
+        cargo build --workspace
+        ```
+
+        This compiles all 9 crates in the workspace. On first run, Cargo downloads and compiles dependencies, which takes a few minutes. Subsequent builds are incremental.
+      </Step>
+      <Step title="Locate the binary">
+        After a successful build, the `claw` binary is at:
+
+        ```bash
+        rust/target/debug/claw
+        ```
+
+        Run it directly with `./target/debug/claw` from inside the `rust/` directory, or add `rust/target/debug` to your `PATH` for convenience.
+      </Step>
+      <Step title="Verify with the test suite">
+        ```bash
+        cargo test --workspace
+        ```
+
+        All tests should pass. If any fail, check that your Rust toolchain is up to date with `rustup update`.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Windows (PowerShell)">
+    <Steps>
+      <Step title="Install Rust">
+        Download and run the installer from [rustup.rs](https://rustup.rs). The installer configures your PATH. Close and reopen PowerShell after it finishes, then verify:
+
+        ```powershell
+        cargo --version
+        git --version
+        ```
+
+        If `cargo` is not found after reopening, run the PATH setup command printed by the Rust installer and retry.
+      </Step>
+      <Step title="Clone the repository">
+        ```powershell
+        git clone https://github.com/ultraworkers/claw-code
+        cd claw-code/rust
+        ```
+      </Step>
+      <Step title="Build the workspace">
+        ```powershell
+        cargo build --workspace
+        ```
+
+        Git Bash and WSL are optional alternatives if you prefer Unix-style paths. In Git Bash, the `MINGW64` prompt is expected and normal.
+      </Step>
+      <Step title="Locate the binary">
+        After a successful build, the `claw.exe` binary is at:
+
+        ```text
+        rust\target\debug\claw.exe
+        ```
+
+        Run it from inside the `rust\` directory with:
+
+        ```powershell
+        .\target\debug\claw.exe --help
+        ```
+
+        Or use `cargo run` to skip the path lookup:
+
+        ```powershell
+        cargo run -- --help
+        ```
+      </Step>
+      <Step title="Verify with the test suite">
+        ```powershell
+        cargo test --workspace
+        ```
+
+        All tests should pass. Run `rustup update` if tests fail due to toolchain issues.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Binary location summary
+
+| Platform | Debug binary path (from repo root) |
+|---|---|
+| Linux / macOS | `rust/target/debug/claw` |
+| Windows | `rust\target\debug\claw.exe` |
+
+For a release-optimized binary, build with `cargo build --workspace --release`. The output goes to `rust/target/release/claw` (or `claw.exe` on Windows).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Set your API key, run the doctor health check, and send your first prompt.
+  </Card>
+  <Card title="Authentication" icon="key" href="/configuration/authentication">
+    Configure API keys, OAuth, and per-provider credential routing.
+  </Card>
+  <Card title="Container workflow" icon="docker" href="/deployment/container">
+    Build and test inside Docker or Podman with bind mounts.
+  </Card>
+  <Card title="CLI flags and commands" icon="terminal" href="/commands/cli-flags">
+    Every flag, subcommand, and permission mode the `claw` binary accepts.
+  </Card>
+</CardGroup>

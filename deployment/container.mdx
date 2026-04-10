@@ -1,0 +1,133 @@
+---
+title: "Run Claw Code in Docker or Podman containers"
+description: "Build the claw-code-dev image from the checked-in Containerfile and run cargo test, open a dev shell, or bind-mount multiple repos using Docker or Podman."
+---
+
+Claw Code ships a checked-in `Containerfile` that gives you a reusable Rust build-and-test shell with the extra packages this workspace needs — `git`, `pkg-config`, `libssl-dev`, and CA certificates. The image does **not** copy the repository into the image. Instead, bind-mount your checkout into `/workspace` so all edits stay on the host and nothing is baked into layers.
+
+The `claw sandbox` command is a useful sanity check: inside Docker or Podman it reports `In container true` and lists the markers the runtime detected (`.dockerenv`, `/run/.containerenv`, cgroup hints, and matching env vars).
+
+## Build the image
+
+Run the following command from the repository root. Docker and Podman both use the same checked-in `Containerfile`.
+
+<Tabs>
+  <Tab title="Docker">
+    ```bash
+    docker build -t claw-code-dev -f Containerfile .
+    ```
+  </Tab>
+  <Tab title="Podman">
+    ```bash
+    podman build -t claw-code-dev -f Containerfile .
+    ```
+  </Tab>
+</Tabs>
+
+## Run `cargo test --workspace`
+
+These commands mount the repo, keep Cargo build artifacts out of the working tree, and run from the Rust workspace at `rust/`.
+
+<Tabs>
+  <Tab title="Docker">
+    ```bash
+    docker run --rm -it \
+      -v "$PWD":/workspace \
+      -e CARGO_TARGET_DIR=/tmp/claw-target \
+      -w /workspace/rust \
+      claw-code-dev \
+      cargo test --workspace
+    ```
+  </Tab>
+  <Tab title="Podman">
+    ```bash
+    podman run --rm -it \
+      -v "$PWD":/workspace:Z \
+      -e CARGO_TARGET_DIR=/tmp/claw-target \
+      -w /workspace/rust \
+      claw-code-dev \
+      cargo test --workspace
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  For a fully clean rebuild, prepend `cargo clean &&` before `cargo test --workspace` inside the container.
+</Tip>
+
+## Open an interactive shell
+
+Drop into a shell inside the container to run arbitrary Cargo commands against the bind-mounted checkout.
+
+<Tabs>
+  <Tab title="Docker">
+    ```bash
+    docker run --rm -it \
+      -v "$PWD":/workspace \
+      -e CARGO_TARGET_DIR=/tmp/claw-target \
+      -w /workspace/rust \
+      claw-code-dev
+    ```
+  </Tab>
+  <Tab title="Podman">
+    ```bash
+    podman run --rm -it \
+      -v "$PWD":/workspace:Z \
+      -e CARGO_TARGET_DIR=/tmp/claw-target \
+      -w /workspace/rust \
+      claw-code-dev
+    ```
+  </Tab>
+</Tabs>
+
+Inside the shell you can run any Cargo command:
+
+```bash
+cargo build --workspace
+cargo test --workspace
+cargo run -p rusty-claude-cli -- --help
+cargo run -p rusty-claude-cli -- sandbox
+```
+
+## Bind-mount two repos simultaneously
+
+If you want to run `claw` against a second checkout while keeping `claw-code` itself mounted read-write, add a second `-v` flag pointing the second repo to `/repo`.
+
+<Tabs>
+  <Tab title="Docker">
+    ```bash
+    docker run --rm -it \
+      -v "$PWD":/workspace \
+      -v "$HOME/src/other-repo":/repo \
+      -e CARGO_TARGET_DIR=/tmp/claw-target \
+      -w /workspace/rust \
+      claw-code-dev
+    ```
+  </Tab>
+  <Tab title="Podman">
+    ```bash
+    podman run --rm -it \
+      -v "$PWD":/workspace:Z \
+      -v "$HOME/src/other-repo":/repo:Z \
+      -e CARGO_TARGET_DIR=/tmp/claw-target \
+      -w /workspace/rust \
+      claw-code-dev
+    ```
+  </Tab>
+</Tabs>
+
+Then, from inside the container:
+
+```bash
+cargo run -p rusty-claude-cli -- prompt "summarize /repo"
+```
+
+## Key notes
+
+<Note>
+  Setting `CARGO_TARGET_DIR=/tmp/claw-target` keeps all build artifacts inside the container. Without it, `cargo` would write a container-owned `target/` directory into your bind-mounted checkout, which can cause permission issues and pollute your host working tree.
+</Note>
+
+- The `:Z` suffix in all Podman examples triggers SELinux relabeling. Keep it on Fedora, RHEL, and other SELinux-enabled hosts; it is harmless to omit on hosts without SELinux.
+- Docker and Podman use the identical `Containerfile` — there is no separate `Dockerfile`.
+- For local development without a container, refer to `USAGE.md` and `rust/README.md`.

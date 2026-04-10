@@ -1,0 +1,152 @@
+---
+title: "Connect Claw Code to AI providers and models"
+description: "Claw Code routes requests to Anthropic, xAI, OpenAI-compatible endpoints, and DashScope based on the model name and available credentials."
+---
+
+Claw Code has four built-in provider backends. The correct backend is selected automatically from the model name — no explicit provider flag is needed. Falling back to credential detection only happens when the model name alone is ambiguous.
+
+## Provider matrix
+
+| Provider | Protocol | Auth env var(s) | Base URL env var | Default base URL |
+|---|---|---|---|---|
+| **Anthropic** | Anthropic Messages API | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, or OAuth (`claw login`) | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` |
+| **xAI** | OpenAI-compatible | `XAI_API_KEY` | `XAI_BASE_URL` | `https://api.x.ai/v1` |
+| **OpenAI-compatible** | OpenAI Chat Completions | `OPENAI_API_KEY` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
+| **DashScope** (Alibaba) | OpenAI-compatible | `DASHSCOPE_API_KEY` | `DASHSCOPE_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+
+The OpenAI-compatible backend also serves as the gateway for **OpenRouter**, **Ollama**, and any other service that speaks the OpenAI `/v1/chat/completions` wire format. Point `OPENAI_BASE_URL` at the service and set `OPENAI_API_KEY` if required.
+
+## Built-in model aliases
+
+These aliases are registered in the built-in alias table with known token limits:
+
+| Alias | Resolved model name | Provider | Max output tokens | Context window |
+|---|---|---|---|---|
+| `opus` | `claude-opus-4-6` | Anthropic | 32,000 | 200,000 |
+| `sonnet` | `claude-sonnet-4-6` | Anthropic | 64,000 | 200,000 |
+| `haiku` | `claude-haiku-4-5-20251213` | Anthropic | 64,000 | 200,000 |
+| `grok` / `grok-3` | `grok-3` | xAI | 64,000 | 131,072 |
+| `grok-mini` / `grok-3-mini` | `grok-3-mini` | xAI | 64,000 | 131,072 |
+| `grok-2` | `grok-2` | xAI | — | — |
+
+Any model name that does not match an alias is passed through verbatim. This is how you use OpenRouter slugs (`openai/gpt-4.1-mini`), Ollama tags (`llama3.2`), or full Anthropic model IDs (`claude-sonnet-4-20250514`).
+
+## Model-name prefix routing
+
+If a model name matches any of the patterns below, Claw Code routes to that provider **regardless of which env vars are set**. This prevents accidental misrouting when multiple credentials are present.
+
+| Prefix | Routes to |
+|---|---|
+| `claude` | Anthropic |
+| `grok` | xAI |
+| `openai/` or `gpt-` | OpenAI-compatible backend |
+| `qwen/` or `qwen-` | DashScope |
+
+When no prefix matches, Claw Code checks credentials in this order: `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`, then `OPENAI_API_KEY`, then `XAI_API_KEY`. If nothing matches, it defaults to Anthropic.
+
+## Provider setup
+
+<Tabs>
+  <Tab title="Anthropic">
+    ```bash
+    export ANTHROPIC_API_KEY="sk-ant-..."
+
+    claw --model sonnet prompt "review this diff"
+    # or with a full model ID:
+    claw --model claude-sonnet-4-20250514 prompt "review this diff"
+    ```
+
+    Use `claw login` for OAuth-based authentication instead of an API key:
+
+    ```bash
+    claw login
+    claw --model opus prompt "summarize this repository"
+    ```
+  </Tab>
+  <Tab title="OpenAI-compatible">
+    Point `OPENAI_BASE_URL` at any OpenAI Chat Completions-compatible endpoint. The model name prefix `openai/` or `gpt-` ensures Claw Code selects this backend.
+
+    ```bash
+    export OPENAI_BASE_URL="https://api.openai.com/v1"
+    export OPENAI_API_KEY="sk-..."
+
+    claw --model openai/gpt-4.1-mini prompt "summarize this repository"
+    ```
+  </Tab>
+  <Tab title="Ollama">
+    Ollama exposes an OpenAI-compatible endpoint at port 11434. Unset `OPENAI_API_KEY` (Ollama does not require one).
+
+    ```bash
+    export OPENAI_BASE_URL="http://127.0.0.1:11434/v1"
+    unset OPENAI_API_KEY
+
+    claw --model llama3.2 prompt "summarize this repository in one sentence"
+    ```
+  </Tab>
+  <Tab title="OpenRouter">
+    OpenRouter keys begin with `sk-or-v1-` and use the `OPENAI_API_KEY` env var alongside `OPENAI_BASE_URL`:
+
+    ```bash
+    export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
+    export OPENAI_API_KEY="sk-or-v1-..."
+
+    claw --model openai/gpt-4.1-mini prompt "summarize this repository in one sentence"
+    ```
+  </Tab>
+  <Tab title="DashScope">
+    DashScope (Alibaba's Qwen API) is selected automatically for model names starting with `qwen/` or `qwen-`. You do not need to set `OPENAI_BASE_URL`.
+
+    ```bash
+    export DASHSCOPE_API_KEY="sk-..."
+
+    claw --model qwen/qwen-max prompt "hello"
+    # bare name also works:
+    claw --model qwen-plus prompt "hello"
+    ```
+
+    <Note>
+      Reasoning variants (`qwen-qwq-*`, `qwq-*`, `*-thinking`) automatically strip `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` before the request is sent — these parameters are rejected by reasoning models.
+    </Note>
+  </Tab>
+  <Tab title="xAI">
+    ```bash
+    export XAI_API_KEY="..."
+
+    claw --model grok prompt "review this diff"
+    # or the full model ID:
+    claw --model grok-3-mini prompt "review this diff"
+    ```
+  </Tab>
+</Tabs>
+
+## Local and self-hosted endpoints
+
+Use `ANTHROPIC_BASE_URL` with `ANTHROPIC_AUTH_TOKEN` for Anthropic-compatible local services, or `OPENAI_BASE_URL` with `OPENAI_API_KEY` for OpenAI-compatible services.
+
+```bash
+# Anthropic-compatible local service
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8080"
+export ANTHROPIC_AUTH_TOKEN="local-dev-token"
+claw --model claude-sonnet-4-6 prompt "reply with the word ready"
+
+# OpenAI-compatible local service
+export OPENAI_BASE_URL="http://127.0.0.1:8000/v1"
+export OPENAI_API_KEY="local-dev-token"
+claw --model qwen2.5-coder prompt "reply with the word ready"
+```
+
+## User-defined aliases
+
+Add custom aliases in any settings file (`~/.claw.json`, `~/.config/claw/settings.json`, `<repo>/.claw/settings.json`, or `<repo>/.claw/settings.local.json`):
+
+```json
+{
+  "aliases": {
+    "fast": "claude-haiku-4-5-20251213",
+    "smart": "claude-opus-4-6",
+    "cheap": "grok-3-mini"
+  }
+}
+```
+
+Project-level settings override user-level settings. Aliases can also chain through the built-in table — `"fast": "haiku"` resolves to `claude-haiku-4-5-20251213`.

@@ -1,0 +1,197 @@
+---
+title: "Rust port parity status and harness coverage"
+description: "Current parity state of the Claw Code Rust port against the original implementation, covering all 9 lanes, mock harness scenarios, and open items."
+---
+
+This page documents the current parity state of the Rust port against the original implementation. It reflects the 9-lane checkpoint recorded in `PARITY.md` as of 2026-04-03, when all 9 lanes were merged on `main`.
+
+<Note>
+  This is a living document and is updated as parity improves. The canonical source is `PARITY.md` at the repository root, consumed by `rust/scripts/run_mock_parity_diff.py`.
+</Note>
+
+## Checkpoint summary
+
+- **All 9 lanes merged on `main`** (HEAD: `ee31e00`)
+- **292 commits** on `main` / 293 across all branches
+- **9 crates**, **48,599 tracked Rust LOC**, **2,568 test LOC**
+- **3 authors**, date range 2026-03-31 → 2026-04-03
+
+## 9-lane status
+
+| Lane | Feature | Status | Feature commit | Merge commit |
+|------|---------|--------|----------------|--------------|
+| 1 | Bash validation | merged | `36dac6c` | `1cfd78a` |
+| 2 | CI fix | merged | `89104eb` | `f1969ce` |
+| 3 | File-tool edge cases | merged | `284163b` | `a98f2b6` |
+| 4 | TaskRegistry | merged | `5ea138e` | `21a1e1d` |
+| 5 | Task wiring | merged | `e8692e4` | `d994be6` |
+| 6 | Team+Cron | merged | `c486ca6` | `49653fe` |
+| 7 | MCP lifecycle | merged | `730667f` | `cc0f92e` |
+| 8 | LSP client | merged | `2d66503` | `d7f0dc6` |
+| 9 | Permission enforcement | merged | `66283f4` | `336f820` |
+
+### Lane details
+
+<AccordionGroup>
+  <Accordion title="Lane 1 — Bash validation">
+    **Feature commit:** `36dac6c` — `feat: add bash validation submodules — readOnlyValidation, destructiveCommandWarning, modeValidation, sedValidation, pathValidation, commandSemantics`
+
+    **Evidence:** `rust/crates/runtime/src/bash_validation.rs` (+1004 on `main`).
+
+    **Current state:** `PermissionEnforcer::check_bash()` provides read-only gating on `main`. The full upstream validation matrix (18 submodules: `readOnlyValidation`, `destructiveCommandWarning`, `modeValidation`, `sedValidation`, `pathValidation`, `commandSemantics`, and others) remains branch-only until this lane fully merges.
+  </Accordion>
+
+  <Accordion title="Lane 2 — CI fix">
+    **Feature commit:** `89104eb` — `fix(sandbox): probe unshare capability instead of binary existence`
+
+    **Merge commit:** `f1969ce` — `Merge jobdori/fix-ci-sandbox: probe unshare capability for CI fix`
+
+    **Evidence:** `rust/crates/runtime/src/sandbox.rs` is 385 LOC and resolves sandbox support from actual `unshare` capability and container signals rather than assuming support from binary presence alone. This removed a CI-specific sandbox assumption from runtime behavior.
+  </Accordion>
+
+  <Accordion title="Lane 3 — File-tool edge cases">
+    **Feature commit:** `284163b` — `feat(file_ops): add edge-case guards — binary detection, size limits, workspace boundary, symlink escape`
+
+    **Merge commit:** `a98f2b6` — `Merge jobdori/file-tool-edge-cases: binary detection, size limits, workspace boundary guards`
+
+    **Evidence:** `rust/crates/runtime/src/file_ops.rs` is 744 LOC and includes `MAX_READ_SIZE`, `MAX_WRITE_SIZE`, NUL-byte binary detection, and canonical workspace-boundary validation.
+
+    **Harness coverage:** `read_file_roundtrip`, `grep_chunk_assembly`, `write_file_allowed`, `write_file_denied`.
+  </Accordion>
+
+  <Accordion title="Lane 4 — TaskRegistry">
+    **Feature commit:** `5ea138e` — `feat(runtime): add TaskRegistry — in-memory task lifecycle management`
+
+    **Merge commit:** `21a1e1d` — `Merge jobdori/task-runtime: TaskRegistry in-memory lifecycle management`
+
+    **Evidence:** `rust/crates/runtime/src/task_registry.rs` is 335 LOC and provides `create`, `get`, `list`, `stop`, `update`, `output`, `append_output`, `set_status`, and `assign_team` over a thread-safe in-memory registry.
+  </Accordion>
+
+  <Accordion title="Lane 5 — Task wiring">
+    **Feature commit:** `e8692e4` — `feat(tools): wire TaskRegistry into task tool dispatch`
+
+    **Merge commit:** `d994be6` — `Merge jobdori/task-registry-wiring: real TaskRegistry backing for all 6 task tools`
+
+    **Evidence:** `rust/crates/tools/src/lib.rs` dispatches `TaskCreate`, `TaskGet`, `TaskList`, `TaskStop`, `TaskUpdate`, and `TaskOutput` through `execute_tool()` via `global_task_registry()`.
+  </Accordion>
+
+  <Accordion title="Lane 6 — Team+Cron">
+    **Feature commit:** `c486ca6` — `feat(runtime+tools): TeamRegistry and CronRegistry — replace team/cron stubs`
+
+    **Merge commit:** `49653fe` — `Merge jobdori/team-cron-runtime: TeamRegistry + CronRegistry wired into tool dispatch`
+
+    **Evidence:** `rust/crates/runtime/src/team_cron_registry.rs` is 363 LOC; `rust/crates/tools/src/lib.rs` wires `TeamCreate`, `TeamDelete`, `CronCreate`, `CronDelete`, and `CronList` into those registries. Team/cron tools have in-memory lifecycle behavior but stop short of a real background scheduler or worker fleet.
+  </Accordion>
+
+  <Accordion title="Lane 7 — MCP lifecycle">
+    **Feature commit:** `730667f` — `feat(runtime+tools): McpToolRegistry — MCP lifecycle bridge for tool surface`
+
+    **Merge commit:** `cc0f92e` — `Merge jobdori/mcp-lifecycle: McpToolRegistry lifecycle bridge for all MCP tools`
+
+    **Evidence:** `rust/crates/runtime/src/mcp_tool_bridge.rs` is 406 LOC and tracks server connection status, resource listing, resource reads, tool listing, tool dispatch acknowledgements, auth state, and disconnects. `rust/crates/tools/src/lib.rs` routes `ListMcpResources`, `ReadMcpResource`, `McpAuth`, and `MCP` into `global_mcp_registry()`.
+
+    **Scope:** end-to-end MCP connection and broader transport depth still depend on the wider MCP runtime (`mcp_stdio.rs`, `mcp_client.rs`, `mcp.rs`).
+  </Accordion>
+
+  <Accordion title="Lane 8 — LSP client">
+    **Feature commit:** `2d66503` — `feat(runtime+tools): LspRegistry — LSP client dispatch for tool surface`
+
+    **Merge commit:** `d7f0dc6` — `Merge jobdori/lsp-client: LspRegistry dispatch for all LSP tool actions`
+
+    **Evidence:** `rust/crates/runtime/src/lsp_client.rs` is 438 LOC and models diagnostics, hover, definition, references, completion, symbols, and formatting. The `LSP` tool schema enumerates `symbols`, `references`, `diagnostics`, `definition`, and `hover` and routes requests through `registry.dispatch()`.
+
+    **Scope:** registry/dispatch-level parity; actual external language-server process orchestration is separate.
+  </Accordion>
+
+  <Accordion title="Lane 9 — Permission enforcement">
+    **Feature commit:** `66283f4` — `feat(runtime+tools): PermissionEnforcer — permission mode enforcement layer`
+
+    **Merge commit:** `336f820` — `Merge jobdori/permission-enforcement: PermissionEnforcer with workspace + bash enforcement`
+
+    **Evidence:** `rust/crates/runtime/src/permission_enforcer.rs` is 340 LOC and adds tool gating, file write boundary checks, and bash read-only heuristics on top of `rust/crates/runtime/src/permissions.rs`.
+
+    **Harness coverage:** `write_file_denied`, `bash_permission_prompt_approved`, `bash_permission_prompt_denied`.
+
+    See [Permission Model](/reference/permission-model) for full details.
+  </Accordion>
+</AccordionGroup>
+
+## Mock parity harness
+
+The mock parity harness provides deterministic end-to-end coverage of CLI behavior without requiring live Anthropic credentials.
+
+- **Crate:** `mock-anthropic-service` (`rust/crates/mock-anthropic-service/`)
+- **Harness file:** `rust/crates/rusty-claude-cli/tests/mock_parity_harness.rs`
+- **Scripted scenarios:** 10
+- **Captured `/v1/messages` requests:** 19
+
+### Harness scenarios
+
+| Scenario | What it covers |
+|----------|---------------|
+| `streaming_text` | SSE streaming response decoding and display |
+| `read_file_roundtrip` | Read-path execution and final synthesis |
+| `grep_chunk_assembly` | Chunked grep tool output handling |
+| `write_file_allowed` | File write success path |
+| `write_file_denied` | Permission denial on file write |
+| `multi_tool_turn_roundtrip` | Multi-tool assistant turns in a single conversation turn |
+| `bash_stdout_roundtrip` | Bash execution and stdout capture |
+| `bash_permission_prompt_approved` | Bash permission prompt — user approves |
+| `bash_permission_prompt_denied` | Bash permission prompt — user denies |
+| `plugin_tool_roundtrip` | Plugin-contributed tool execution path |
+
+### Running the harness
+
+```bash
+cd rust
+
+# Reproducible clean-environment run
+./scripts/run_mock_parity_harness.sh
+
+# Start mock service manually for ad hoc runs
+cargo run -p mock-anthropic-service -- --bind 127.0.0.1:0
+
+# Scenario checklist + PARITY mapping runner
+python scripts/run_mock_parity_diff.py
+```
+
+## Tool surface
+
+`mvp_tool_specs()` in `rust/crates/tools/src/lib.rs` exposes **40 tool specs** on `main`.
+
+Core execution is present for: `bash`, `read_file`, `write_file`, `edit_file`, `glob_search`, `grep_search`.
+
+The 9-lane push replaced pure fixed-payload stubs for `Task*`, `Team*`, `Cron*`, `LSP`, and MCP tools with registry-backed handlers.
+
+## Still limited or intentionally shallow
+
+Some tool implementations remain shallow at this checkpoint:
+
+| Tool / area | Current state |
+|-------------|--------------|
+| `AskUserQuestion` | Returns a pending response payload; real interactive UI wiring is not yet landed |
+| `RemoteTrigger` | Stub response |
+| `TestingPermission` | Test-only; not exposed in `mvp_tool_specs()` |
+| Task, team, cron, MCP, LSP | Registry-backed in-memory approximations; not full external-runtime integrations |
+| Bash deep validation | Branch-only until `36dac6c` is fully merged; 18 upstream submodules vs 1 on `main` |
+
+## Still open
+
+- [ ] End-to-end MCP runtime lifecycle beyond the registry bridge on `main`
+- [ ] Session compaction behavior matching
+- [ ] Token counting / cost tracking accuracy
+- [ ] CI green on every commit
+
+## Reconciled checklist
+
+Items confirmed resolved at this checkpoint:
+
+- [x] Path traversal prevention (symlink following, `../` escapes)
+- [x] Size limits on read/write (`MAX_READ_SIZE`, `MAX_WRITE_SIZE`)
+- [x] Binary file detection (NUL-byte check in `file_ops.rs`)
+- [x] Permission mode enforcement (`read-only` vs `workspace-write`)
+- [x] Config merge precedence (user > project > local) — verified by `loads_and_merges_claude_code_config_files_by_precedence()`
+- [x] Plugin install/enable/disable/uninstall flow — `/plugin` delegates to `PluginManager` in `rust/crates/plugins/src/lib.rs`
+- [x] No `#[ignore]` tests hiding failures — 0 ignored tests found across `rust/**/*.rs`
+- [x] Output truncation (large stdout/file content)
+- [x] Bash validation lane merged onto `main`

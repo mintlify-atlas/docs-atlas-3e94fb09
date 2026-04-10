@@ -1,0 +1,160 @@
+---
+title: "Claw Code permission modes, flags, and tool gating"
+description: "Reference for Claw Code's three permission modes, PermissionEnforcer behavior, tool gating flags, and the bash permission prompt flow."
+---
+
+Claw Code enforces tool access through a layered permission system. The `PermissionEnforcer` in the `runtime` crate gates file writes and bash execution based on a configurable permission mode. The mode can be set at startup via `--permission-mode`, locked down further with `--allowedTools`, or bypassed entirely with `--dangerously-skip-permissions`.
+
+<Warning>
+  The default permission mode is `danger-full-access`. Unless you explicitly pass `--permission-mode read-only` or `--permission-mode workspace-write`, **no tool gating is applied** and `claw` can read, write, and execute freely in your environment.
+</Warning>
+
+## Permission modes
+
+<AccordionGroup>
+  <Accordion title="read-only">
+    **Denies file writes and mutating bash commands.**
+
+    In `read-only` mode the `PermissionEnforcer` blocks:
+
+    - All `WriteFile` and `EditFile` tool calls — any attempt to write or modify a file returns a permission denial.
+    - Bash commands classified as mutating by the read-only heuristics (e.g. commands that modify files, install packages, or alter system state).
+    - Bash commands that would normally trigger a permission prompt are blocked outright rather than escalated, because the mode signals an explicit intent to deny mutations.
+
+    Use `read-only` when running `claw` over a codebase you want to inspect or summarize without risk of modification.
+
+    ```bash
+    claw --permission-mode read-only prompt "summarize Cargo.toml"
+    ```
+  </Accordion>
+
+  <Accordion title="workspace-write">
+    **Allows reads and writes within the workspace boundary.**
+
+    In `workspace-write` mode the `PermissionEnforcer`:
+
+    - Permits file reads anywhere accessible to the process.
+    - Permits file writes only within the detected workspace root. Paths that resolve outside the workspace — including symlinks that escape the boundary — are denied.
+    - Applies workspace-boundary checks via `check_file_write()` (see [PermissionEnforcer behavior](#permissionenforcer-behavior) below).
+    - Allows bash execution without a permission prompt, subject to the same tool-level `required_permission` checks.
+
+    Use `workspace-write` when you want `claw` to make changes inside your project but not touch paths outside it.
+
+    ```bash
+    claw --permission-mode workspace-write prompt "update README.md"
+    ```
+  </Accordion>
+
+  <Accordion title="danger-full-access (default)">
+    **No tool gating applied.**
+
+    In `danger-full-access` mode the `PermissionEnforcer` does not block any tool call based on mode alone. All 40 tool specs are accessible, and bash execution proceeds without confirmation prompts.
+
+    This is the **default mode** when `--permission-mode` is not specified. It is appropriate for trusted local development environments where you want `claw` to operate with full autonomy.
+
+    ```bash
+    # Equivalent — both use danger-full-access
+    claw prompt "rebuild the workspace"
+    claw --permission-mode danger-full-access prompt "rebuild the workspace"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## CLI flags
+
+### `--permission-mode`
+
+Sets the active permission mode for the session.
+
+```bash
+claw --permission-mode read-only prompt "explain this codebase"
+claw --permission-mode workspace-write prompt "refactor src/lib.rs"
+claw --permission-mode danger-full-access prompt "deploy to production"
+```
+
+Accepted values: `read-only`, `workspace-write`, `danger-full-access`.
+
+### `--dangerously-skip-permissions`
+
+Skips all `PermissionEnforcer` checks entirely for the session, including checks that would normally apply even in `danger-full-access` mode. Use with caution in automated pipelines where you have already validated the environment.
+
+```bash
+claw --dangerously-skip-permissions prompt "run the full test suite and fix failures"
+```
+
+### `--allowedTools`
+
+Restricts the active tool surface to a comma-separated list of tool names. Tools not in the list are unavailable to the model for the duration of the session, regardless of the permission mode.
+
+```bash
+# Only allow read and glob — no writes, no bash
+claw --allowedTools read,glob "inspect the runtime crate"
+
+# Allow bash and read but not file writes
+claw --allowedTools bash,read prompt "run cargo check and show me the output"
+```
+
+## PermissionEnforcer behavior
+
+The `PermissionEnforcer` lives at `rust/crates/runtime/src/permission_enforcer.rs` (340 LOC). It is called by `execute_tool()` in the `tools` crate before any tool runs.
+
+### `check_file_write()`
+
+Called before every `WriteFile` or `EditFile` execution. It enforces:
+
+- **`read-only` denial** — returns a permission error immediately if the active mode is `read-only`.
+- **Workspace boundary** — resolves the target path canonically and verifies it falls within the workspace root. Writes to paths outside the boundary are denied.
+- **Symlink escape detection** — symlinks that resolve to a destination outside the workspace boundary are caught and denied, preventing traversal attacks.
+- **Binary detection** — NUL-byte detection (`file_ops.rs`) rejects writes to binary files to avoid accidental corruption.
+
+### `check_bash()`
+
+Called before every `Bash` tool execution. It enforces:
+
+- **`read-only` heuristics** — classifies the command against a set of known-mutating patterns. Commands that match (e.g. writes via redirects, package installs, `rm`, `mv`) are denied in `read-only` mode.
+- **Prompt-mode confirmation** — in `workspace-write` mode, bash commands that cannot be statically classified may be escalated to the user for confirmation before execution.
+- **`PermissionPolicy::authorize()`** — delegates the final allow/deny decision to the policy layer, which can be overridden via config.
+
+## Permission prompt flow
+
+The bash permission prompt flow covers two harness-validated scenarios:
+
+<AccordionGroup>
+  <Accordion title="bash_permission_prompt_approved">
+    The model requests a bash command that requires confirmation. `check_bash()` escalates to the user prompt. The user approves. The command executes and its stdout is returned to the model as a tool result.
+
+    This flow is exercised by the `bash_permission_prompt_approved` scenario in `rust/crates/rusty-claude-cli/tests/mock_parity_harness.rs`.
+  </Accordion>
+
+  <Accordion title="bash_permission_prompt_denied">
+    The model requests a bash command that requires confirmation. `check_bash()` escalates to the user prompt. The user denies. The tool call returns a permission-denied result to the model without executing the command.
+
+    This flow is exercised by the `bash_permission_prompt_denied` scenario in the same harness file.
+  </Accordion>
+</AccordionGroup>
+
+## Config-based permission policy
+
+Permission mode can also be set in any config file so it applies automatically without a CLI flag:
+
+```json
+{
+  "permissionMode": "workspace-write"
+}
+```
+
+Config files are loaded in the following order (later entries override earlier ones):
+
+| Priority | Path |
+|----------|------|
+| 1 (lowest) | `~/.claw.json` |
+| 2 | `~/.config/claw/settings.json` |
+| 3 | `<repo>/.claw.json` |
+| 4 | `<repo>/.claw/settings.json` |
+| 5 (highest) | `<repo>/.claw/settings.local.json` |
+
+A `--permission-mode` flag passed at the command line overrides all config-file values.
+
+## Tool-level required permissions
+
+Each of the 40 tool specs in `mvp_tool_specs()` carries a `required_permission` value. `enforce_permission_check()` in the `tools` crate compares the active mode against this value before calling `execute_tool()`. This means individual tools can declare a minimum permission level independently of the global mode setting.

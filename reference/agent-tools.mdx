@@ -1,0 +1,318 @@
+---
+title: "Agent, task, and orchestration tools in Claw Code"
+description: "Reference for Agent, TodoWrite, Skill, ToolSearch, NotebookEdit, Sleep, SendUserMessage, StructuredOutput, and Task/Team/Cron registry tools in Claw Code."
+---
+
+Claw Code's agent and orchestration tools enable multi-agent coordination, task scheduling, notebook editing, and machine-readable output. The tools span three implementation tiers: fully executed built-ins (Agent, TodoWrite, Skill, Sleep, SendUserMessage), registry-backed in-memory tools (TaskCreate/Get/List/Stop/Update/Output, TeamCreate/Delete, CronCreate/Delete/List), and output/meta tools (StructuredOutput, ToolSearch, NotebookEdit).
+
+<Note>
+Registry-backed tools (Task, Team, Cron) use in-memory state scoped to the current session. They provide full lifecycle management through `TaskRegistry`, `TeamRegistry`, and `CronRegistry` in the `runtime` crate, but do not launch external subprocesses or a real background scheduler by themselves.
+</Note>
+
+## Core agent tools
+
+<AccordionGroup>
+
+  <Accordion title="Agent">
+
+    Launch a specialized sub-agent task. The tool persists handoff metadata so the parent agent can later inspect the sub-agent's work.
+
+    **Permission:** `danger-full-access`
+
+    <ParamField path="description" type="string" required>
+      Human-readable description of what this sub-agent is being asked to do.
+    </ParamField>
+
+    <ParamField path="prompt" type="string" required>
+      The task prompt sent to the sub-agent.
+    </ParamField>
+
+    <ParamField path="subagent_type" type="string">
+      Optional sub-agent specialization hint (e.g. `"code-review"`, `"test-writer"`).
+    </ParamField>
+
+    <ParamField path="name" type="string">
+      Optional display name for the sub-agent in the session log.
+    </ParamField>
+
+    <ParamField path="model" type="string">
+      Override the model used by the sub-agent. Accepts model aliases (`opus`, `sonnet`, `haiku`) or full model IDs.
+    </ParamField>
+
+    ```json
+    {
+      "description": "Write unit tests for the parser module",
+      "prompt": "Write comprehensive unit tests for rust/crates/runtime/src/file_ops.rs",
+      "subagent_type": "test-writer",
+      "model": "sonnet"
+    }
+    ```
+
+    **Slash command:** `/subagent list` shows running sub-agents, `/subagent steer <id> <msg>` steers a running sub-agent, and `/subagent kill <id>` terminates one.
+
+  </Accordion>
+
+  <Accordion title="TodoWrite">
+
+    Update the structured task list for the current session. Every call replaces the full task list with the provided array, so include all tasks — not just new ones.
+
+    **Permission:** `workspace-write`
+
+    <ParamField path="todos" type="array" required>
+      Array of task objects. Each task must have `content`, `activeForm`, and `status`.
+
+      - `content` (string, required) — task description text
+      - `activeForm` (string, required) — display form of the task (often matches `content`)
+      - `status` (string, required) — one of `pending`, `in_progress`, or `completed`
+    </ParamField>
+
+    ```json
+    {
+      "todos": [
+        {
+          "content": "Read source files",
+          "activeForm": "Read source files",
+          "status": "completed"
+        },
+        {
+          "content": "Write documentation pages",
+          "activeForm": "Write documentation pages",
+          "status": "in_progress"
+        }
+      ]
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="Skill">
+
+    Load a local skill definition and inject its instructions into the conversation context. Skills live under `.claw/skills/` (or `.codex/skills/` for legacy paths) and are discovered by `claw skills` or `/skills list`.
+
+    **Permission:** `read-only`
+
+    <ParamField path="skill" type="string" required>
+      Name of the skill to load. Must match an installed skill in the skills inventory.
+    </ParamField>
+
+    <ParamField path="args" type="string">
+      Optional arguments passed to the skill's instruction template.
+    </ParamField>
+
+    ```json
+    {
+      "skill": "mintlify",
+      "args": "creating a new reference page"
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="ToolSearch">
+
+    Search for deferred or specialized tools by exact name or keywords. Useful when the full tool list is large and the model needs to discover the right tool for a task.
+
+    **Permission:** `read-only`
+
+    <ParamField path="query" type="string" required>
+      Search query — either an exact tool name or a keyword description of what you need.
+    </ParamField>
+
+    <ParamField path="max_results" type="integer">
+      Maximum number of tools to return. Defaults to a sensible limit if omitted.
+    </ParamField>
+
+    The search runs against both built-in `deferred_tool_specs()`, runtime tools, and installed plugin tools. Results include the tool name and a relevance-ranked description snippet.
+
+    ```json
+    {
+      "query": "schedule recurring task",
+      "max_results": 5
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="NotebookEdit">
+
+    Replace, insert, or delete a cell in a Jupyter-style notebook (`.ipynb`).
+
+    **Permission:** `workspace-write`
+
+    <ParamField path="notebook_path" type="string" required>
+      Path to the `.ipynb` notebook file within the workspace.
+    </ParamField>
+
+    <ParamField path="cell_id" type="string">
+      ID of the cell to edit, replace, or delete. Required for `replace` and `delete` modes; omit for `insert`.
+    </ParamField>
+
+    <ParamField path="new_source" type="string">
+      New cell source content. Required for `replace` and `insert` modes.
+    </ParamField>
+
+    <ParamField path="cell_type" type="string">
+      Cell type for new cells: `code` or `markdown`. Used when inserting.
+    </ParamField>
+
+    <ParamField path="edit_mode" type="string">
+      Edit operation: `replace` (default), `insert`, or `delete`.
+    </ParamField>
+
+    ```json
+    {
+      "notebook_path": "analysis/exploration.ipynb",
+      "cell_id": "cell-3a2f",
+      "new_source": "import pandas as pd\ndf = pd.read_csv('data.csv')",
+      "cell_type": "code",
+      "edit_mode": "replace"
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="Sleep">
+
+    Pause execution for a specified duration without holding a shell process. Useful for introducing delays between tool calls in orchestration flows.
+
+    **Permission:** `read-only`
+
+    <ParamField path="duration_ms" type="integer" required>
+      Duration to sleep in milliseconds. Must be 0 or greater.
+    </ParamField>
+
+    ```json
+    {
+      "duration_ms": 2000
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="SendUserMessage">
+
+    Send a message to the user in multi-agent flows. Also accessible as the `Brief` execution alias in `execute_tool()`.
+
+    **Permission:** `read-only`
+
+    <ParamField path="message" type="string" required>
+      The message text to deliver to the user.
+    </ParamField>
+
+    <ParamField path="status" type="string" required>
+      Delivery mode: `normal` for standard messages, or `proactive` for unsolicited status updates from background agents.
+    </ParamField>
+
+    <ParamField path="attachments" type="array">
+      Optional list of file paths or resource references to attach to the message.
+    </ParamField>
+
+    ```json
+    {
+      "message": "Analysis complete. Found 3 security issues in the dependency tree.",
+      "status": "proactive"
+    }
+    ```
+
+  </Accordion>
+
+  <Accordion title="StructuredOutput">
+
+    Return structured output in a machine-readable format. Use this when calling Claw from automation pipelines that need to parse the agent's response as JSON rather than free-form text.
+
+    **Permission:** `read-only`
+
+    The input schema accepts any additional properties (`additionalProperties: true`), making it a flexible pass-through for arbitrary structured payloads.
+
+    Combined with `--output-format json` at the CLI level, `StructuredOutput` ensures the entire response is machine-parseable:
+
+    ```bash
+    ./target/debug/claw --output-format json \
+      prompt "list all public functions in src/lib.rs as JSON"
+    ```
+
+  </Accordion>
+
+</AccordionGroup>
+
+## TaskRegistry tools
+
+The six task tools provide full in-memory lifecycle management via `global_task_registry()`. Tasks are scoped to the current session.
+
+| Tool | Permission | Description |
+|------|-----------|-------------|
+| `TaskCreate` | `danger-full-access` | Create a background task with a prompt and optional description |
+| `TaskGet` | `read-only` | Get status and details by `task_id` |
+| `TaskList` | `read-only` | List all tasks with their current status |
+| `TaskStop` | `danger-full-access` | Stop a running task by `task_id` |
+| `TaskUpdate` | `danger-full-access` | Send a message or update to a running task |
+| `TaskOutput` | `read-only` | Retrieve accumulated output from a task |
+
+**TaskCreate example:**
+
+```json
+{
+  "prompt": "Run cargo test --workspace and report failures",
+  "description": "Full workspace test run"
+}
+```
+
+**TaskGet example:**
+
+```json
+{
+  "task_id": "task-abc123"
+}
+```
+
+## Team tools
+
+Team tools group multiple tasks for parallel sub-agent execution. Backed by `global_team_registry()`.
+
+| Tool | Permission | Description |
+|------|-----------|-------------|
+| `TeamCreate` | `danger-full-access` | Create a named team with an array of task prompts |
+| `TeamDelete` | `danger-full-access` | Delete a team and stop all its tasks |
+
+**TeamCreate example:**
+
+```json
+{
+  "name": "doc-generation-team",
+  "tasks": [
+    { "prompt": "Write reference/file-tools.mdx" },
+    { "prompt": "Write reference/bash-tool.mdx" },
+    { "prompt": "Write reference/web-tools.mdx" }
+  ]
+}
+```
+
+## Cron tools
+
+Cron tools schedule recurring prompts. Backed by `global_cron_registry()`. The registry provides in-memory tracking; a full background scheduler is a separate runtime concern.
+
+| Tool | Permission | Description |
+|------|-----------|-------------|
+| `CronCreate` | `danger-full-access` | Create a scheduled recurring task with a cron schedule string |
+| `CronDelete` | `danger-full-access` | Delete a scheduled task by `cron_id` |
+| `CronList` | `read-only` | List all scheduled tasks with run counts and last-run times |
+
+**CronCreate example:**
+
+```json
+{
+  "schedule": "0 9 * * 1",
+  "prompt": "Run /security-review and send results to the team",
+  "description": "Weekly Monday security review"
+}
+```
+
+## Sub-agent slash commands
+
+Manage running sub-agents from the REPL without tool calls:
+
+| Command | Description |
+|---------|-------------|
+| `/subagent list` | List all active sub-agents and their status |
+| `/subagent steer <id> <msg>` | Send a steering message to a running sub-agent |
+| `/subagent kill <id>` | Terminate a sub-agent by ID |

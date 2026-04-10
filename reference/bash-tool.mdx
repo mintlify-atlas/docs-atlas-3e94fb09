@@ -1,0 +1,144 @@
+---
+title: "Bash tool: execute shell commands in Claw Code"
+description: "Reference for the bash tool in Claw Code: permission gating, timeout, background execution, sandbox detection, and planned validation submodules."
+---
+
+The `bash` tool runs arbitrary shell commands inside the current workspace. It is the most powerful built-in tool and carries the highest permission requirement. Every invocation passes through `PermissionEnforcer::check_bash()` before the subprocess is started.
+
+The active implementation lives in `rust/crates/runtime/src/bash.rs` (283 LOC on `main`). Permission enforcement is layered on top via `rust/crates/runtime/src/permission_enforcer.rs`.
+
+<Warning>
+`bash` requires `danger-full-access` permission mode. Starting Claw with `--dangerously-skip-permissions` or `--permission-mode danger-full-access` grants unrestricted shell execution. Only use this mode in trusted, isolated environments. The default permission mode is `danger-full-access`, so always pass `--permission-mode read-only` or `--permission-mode workspace-write` for untrusted inputs.
+</Warning>
+
+## Parameters
+
+<ParamField path="command" type="string" required>
+  The shell command to execute. Passed directly to the subprocess.
+</ParamField>
+
+<ParamField path="timeout" type="integer">
+  Maximum execution time in seconds. The process is killed if it exceeds this limit. Omit for the runtime default.
+</ParamField>
+
+<ParamField path="description" type="string">
+  Human-readable description of what the command does. Shown in permission prompt dialogs and session logs.
+</ParamField>
+
+<ParamField path="run_in_background" type="boolean">
+  When `true`, the command is launched as a detached background process. The tool returns immediately with a process handle rather than waiting for exit.
+</ParamField>
+
+<ParamField path="dangerouslyDisableSandbox" type="boolean">
+  Bypass the namespace sandbox for this specific command. Requires that the session is already in `danger-full-access` mode.
+</ParamField>
+
+<ParamField path="namespaceRestrictions" type="boolean">
+  Enable Linux namespace isolation for this command (PID, network, mount namespaces).
+</ParamField>
+
+<ParamField path="isolateNetwork" type="boolean">
+  Restrict the command to a network namespace without external access.
+</ParamField>
+
+<ParamField path="filesystemMode" type="string">
+  Filesystem access mode for the sandboxed subprocess. One of `off`, `workspace-only`, or `allow-list`.
+</ParamField>
+
+<ParamField path="allowedMounts" type="array">
+  Additional mount paths to allow when `filesystemMode` is `allow-list`.
+</ParamField>
+
+## Permission gating
+
+The permission enforcer applies two checks before any bash subprocess starts:
+
+1. **Read-only mode denial.** When the session is in `read-only` mode, `PermissionEnforcer::check_bash()` rejects all bash invocations with a structured denial. No subprocess is spawned.
+
+2. **Prompt mode escalation.** When the session is in `workspace-write` mode (prompt mode), the bash command is paused and the user is asked to approve or deny the execution before it proceeds.
+
+### Parity harness coverage
+
+| Scenario | What it validates |
+|----------|-------------------|
+| `bash_stdout_roundtrip` | End-to-end bash execution, stdout capture, and response synthesis |
+| `bash_permission_prompt_approved` | Full prompt-escalation flow where the user approves the command |
+| `bash_permission_prompt_denied` | Prompt-escalation flow where the user denies the command — validates the structured denial payload |
+
+## Background execution
+
+Set `run_in_background: true` to run long-lived or fire-and-forget commands:
+
+```json
+{
+  "command": "cargo build --workspace 2>&1 | tee /tmp/build.log",
+  "run_in_background": true,
+  "description": "Background workspace build"
+}
+```
+
+The tool returns without waiting for the process to complete. Use subsequent bash calls to check `/tmp/build.log` or poll process state.
+
+## Timeout behavior
+
+Commands that exceed the configured timeout are sent `SIGKILL`. Partial stdout/stderr captured before the timeout is included in the response. To override the default timeout for a long-running build:
+
+```json
+{
+  "command": "cargo test --workspace",
+  "timeout": 300,
+  "description": "Full workspace test suite"
+}
+```
+
+## Sandbox detection
+
+Run the `claw sandbox` CLI subcommand to check whether Claw is running inside a container environment:
+
+```bash
+./target/debug/claw sandbox
+```
+
+Inside the REPL:
+
+```bash
+/sandbox
+```
+
+The sandbox probe (implemented in `rust/crates/runtime/src/sandbox.rs`, 385 LOC) detects container signals and `unshare` capability rather than assuming support from binary presence alone. This distinction matters because CI environments often have the `unshare` binary but lack the kernel capability to create namespaces.
+
+## Validation submodules
+
+<Note>
+The full bash validation module (`bash_validation.rs`) is branch-only as of the 9-lane checkpoint. The submodules listed below are targeted by feature commit `36dac6c` but have not yet merged onto `main`. On `main`, `PermissionEnforcer::check_bash()` provides read-only gating.
+</Note>
+
+Planned validation submodules from the branch:
+
+| Submodule | What it checks |
+|-----------|----------------|
+| `readOnlyValidation` | Deny mutating commands in read-only mode |
+| `destructiveCommandWarning` | Warn before `rm -rf`, `dd`, truncation, etc. |
+| `modeValidation` | Validate that the command matches the active permission mode |
+| `sedValidation` | Detect in-place `sed -i` patterns that write outside the workspace |
+| `pathValidation` | Verify that all path arguments are within the workspace root |
+| `commandSemantics` | Semantic analysis of chained and piped commands |
+
+The upstream implementation has 18 validation submodules; the Rust branch implements 6 of those with a dedicated `bash_validation.rs` module.
+
+## Example usage
+
+One-shot bash in `workspace-write` mode (prompts for approval):
+
+```bash
+./target/debug/claw --permission-mode workspace-write \
+  prompt "run cargo fmt --all and show the diff"
+```
+
+Restrict to bash only via `--allowedTools`:
+
+```bash
+./target/debug/claw --allowedTools bash \
+  --permission-mode danger-full-access \
+  prompt "count lines of Rust source"
+```
